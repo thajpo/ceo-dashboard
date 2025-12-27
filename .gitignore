@@ -8,3 +8,14 @@ wheels/
 
 # Virtual environments
 .venv
+
+# Test artifacts
+screenshots/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# OS
+.DS_Store
