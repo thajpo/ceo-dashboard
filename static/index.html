@@ -1,0 +1,603 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Claude CEO Dashboard</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #1a1a2e;
+            color: #eee;
+            height: 100vh;
+            display: flex;
+        }
+
+        /* Left Sidebar - Projects */
+        .sidebar {
+            width: 200px;
+            background: #0d1b2a;
+            border-right: 1px solid #2a3a4a;
+            display: flex;
+            flex-direction: column;
+        }
+        .sidebar h2 {
+            padding: 16px;
+            font-size: 14px;
+            color: #888;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        .project-list {
+            flex: 1;
+            overflow-y: auto;
+        }
+        .project-item {
+            padding: 12px 16px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            transition: background 0.2s;
+        }
+        .project-item:hover {
+            background: #16213e;
+        }
+        .project-item.active {
+            background: #1e3a5f;
+        }
+        .project-item .dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #444;
+        }
+        .project-item.running .dot {
+            background: #4ade80;
+            animation: pulse 1s infinite;
+        }
+        .mode-selector {
+            padding: 12px 16px;
+            border-top: 1px solid #2a3a4a;
+        }
+        .mode-selector label {
+            display: block;
+            font-size: 11px;
+            color: #666;
+            margin-bottom: 6px;
+        }
+        .mode-selector select {
+            width: 100%;
+            padding: 8px;
+            background: #16213e;
+            color: #eee;
+            border: none;
+            border-radius: 4px;
+            font-size: 12px;
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        /* Main Content */
+        .main {
+            flex: 1;
+            display: flex;
+            overflow: hidden;
+        }
+
+        /* Agents Panel */
+        .agents-panel {
+            flex: 1;
+            padding: 20px;
+            overflow-y: auto;
+            border-right: 1px solid #2a3a4a;
+        }
+        .agents-panel h2 {
+            margin-bottom: 16px;
+            font-size: 18px;
+        }
+        .agent-card {
+            background: #16213e;
+            border-radius: 8px;
+            padding: 16px;
+            margin-bottom: 12px;
+        }
+        .agent-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+        }
+        .agent-name {
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .status-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+        }
+        .status-idle { background: #666; }
+        .status-working { background: #4ade80; animation: pulse 1s infinite; }
+        .status-needs_attention { background: #fbbf24; animation: pulse 0.5s infinite; }
+        .close-btn {
+            background: transparent;
+            border: none;
+            color: #666;
+            cursor: pointer;
+            font-size: 18px;
+        }
+        .close-btn:hover { color: #e53e3e; }
+        .mode-badge {
+            font-size: 12px;
+            opacity: 0.7;
+        }
+        .agent-status {
+            font-size: 12px;
+            color: #888;
+            margin-bottom: 8px;
+        }
+        .agent-input {
+            display: flex;
+            gap: 8px;
+        }
+        .agent-input input {
+            flex: 1;
+            padding: 8px 12px;
+            border: none;
+            border-radius: 6px;
+            background: #0d1b2a;
+            color: #eee;
+            font-size: 13px;
+        }
+        .agent-input input:focus {
+            outline: 2px solid #4a6fa5;
+        }
+        .agent-input button {
+            padding: 8px 16px;
+            border: none;
+            border-radius: 6px;
+            background: #4a6fa5;
+            color: #fff;
+            cursor: pointer;
+        }
+        .agent-input button:hover {
+            background: #5a7fb5;
+        }
+        .no-agents {
+            color: #666;
+            font-style: italic;
+            text-align: center;
+            padding: 40px;
+        }
+
+        /* Inbox Panel */
+        .inbox-panel {
+            width: 400px;
+            background: #0d1b2a;
+            display: flex;
+            flex-direction: column;
+        }
+        .inbox-panel h2 {
+            padding: 16px 20px;
+            font-size: 18px;
+            border-bottom: 1px solid #2a3a4a;
+        }
+        .inbox-list {
+            flex: 1;
+            overflow-y: auto;
+            padding: 12px;
+        }
+        .inbox-item {
+            background: #16213e;
+            border-radius: 8px;
+            padding: 12px;
+            margin-bottom: 8px;
+        }
+        .inbox-item.question {
+            border-left: 3px solid #fbbf24;
+        }
+        .inbox-item.approval {
+            border-left: 3px solid #f97316;
+        }
+        .inbox-item.plan {
+            border-left: 3px solid #8b5cf6;
+        }
+        .inbox-item.error {
+            border-left: 3px solid #e53e3e;
+        }
+        .inbox-header {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 8px;
+        }
+        .inbox-project {
+            font-weight: 600;
+            font-size: 13px;
+        }
+        .inbox-time {
+            font-size: 11px;
+            color: #666;
+        }
+        .inbox-content {
+            font-size: 13px;
+            line-height: 1.4;
+            color: #ccc;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+        .inbox-reply {
+            margin-top: 8px;
+            display: flex;
+            gap: 6px;
+        }
+        .inbox-reply input {
+            flex: 1;
+            padding: 6px 10px;
+            border: none;
+            border-radius: 4px;
+            background: #0d1b2a;
+            color: #eee;
+            font-size: 12px;
+        }
+        .inbox-reply button {
+            padding: 6px 12px;
+            border: none;
+            border-radius: 4px;
+            background: #4a6fa5;
+            color: #fff;
+            cursor: pointer;
+            font-size: 12px;
+        }
+        .no-inbox {
+            color: #666;
+            font-style: italic;
+            text-align: center;
+            padding: 40px;
+        }
+    </style>
+</head>
+<body>
+    <!-- Sidebar -->
+    <div class="sidebar">
+        <h2>Projects</h2>
+        <div class="project-list" id="project-list"></div>
+        <div class="mode-selector">
+            <label>Mode:</label>
+            <select id="mode-select">
+                <option value="normal">Normal</option>
+                <option value="plan">Plan (read-only)</option>
+                <option value="yolo">YOLO (no approvals)</option>
+            </select>
+        </div>
+    </div>
+
+    <!-- Main Content -->
+    <div class="main">
+        <!-- Active Agents -->
+        <div class="agents-panel">
+            <h2>Active Agents</h2>
+            <div id="agents-container">
+                <p class="no-agents">Click a project to start an agent</p>
+            </div>
+        </div>
+
+        <!-- Inbox -->
+        <div class="inbox-panel">
+            <h2>Inbox</h2>
+            <div class="inbox-list" id="inbox-list">
+                <p class="no-inbox">No messages yet</p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const agents = {};
+        const inbox = [];
+        let ws;
+
+        async function loadProjects() {
+            const res = await fetch('/projects');
+            const data = await res.json();
+            const list = document.getElementById('project-list');
+
+            data.projects.forEach(p => {
+                const div = document.createElement('div');
+                div.className = 'project-item';
+                div.dataset.project = p;
+                div.innerHTML = `<span class="dot"></span><span>${p}</span>`;
+                div.onclick = () => startAgent(p);
+                list.appendChild(div);
+            });
+        }
+
+        function connectWebSocket() {
+            ws = new WebSocket(`ws://${location.host}/ws`);
+
+            ws.onmessage = (event) => {
+                const msg = JSON.parse(event.data);
+                handleMessage(msg);
+            };
+
+            ws.onclose = () => {
+                setTimeout(connectWebSocket, 1000);
+            };
+        }
+
+        function handleMessage(msg) {
+            const agentId = msg.agent_id;
+
+            if (msg.type === 'init') {
+                if (!agents[agentId]) {
+                    createAgentCard(agentId, msg.project, msg.status);
+                    markProjectRunning(msg.project, true);
+                }
+                return;
+            }
+
+            if (msg.type === 'deleted') {
+                const agent = agents[agentId];
+                if (agent) markProjectRunning(agent.project, false);
+                removeAgentCard(agentId);
+                return;
+            }
+
+            if (msg.type === 'status') {
+                updateAgentStatus(agentId, msg.status);
+                return;
+            }
+
+            if (msg.type === 'output') {
+                // Only update agent status preview, don't add to inbox
+                updateAgentPreview(agentId, msg);
+            } else if (msg.type === 'interrupt') {
+                // Add to inbox
+                handleInterrupt(agentId, msg);
+            }
+        }
+
+        function markProjectRunning(project, running) {
+            const items = document.querySelectorAll('.project-item');
+            items.forEach(item => {
+                if (item.dataset.project === project) {
+                    item.classList.toggle('running', running);
+                }
+            });
+        }
+
+        function createAgentCard(agentId, project, status, mode = 'normal') {
+            const container = document.getElementById('agents-container');
+            const noAgents = container.querySelector('.no-agents');
+            if (noAgents) noAgents.remove();
+
+            const modeLabels = { normal: '', plan: '📋', yolo: '🔥' };
+            const modeLabel = modeLabels[mode] || '';
+
+            const card = document.createElement('div');
+            card.className = 'agent-card';
+            card.id = `agent-${agentId}`;
+            card.innerHTML = `
+                <div class="agent-header">
+                    <div class="agent-name">
+                        <span class="status-dot status-${status}"></span>
+                        <span>${project}</span>
+                        ${modeLabel ? `<span class="mode-badge">${modeLabel}</span>` : ''}
+                    </div>
+                    <button class="close-btn" onclick="closeAgent('${agentId}')">&times;</button>
+                </div>
+                <div class="agent-status" id="status-${agentId}">Starting...</div>
+                <div class="agent-input">
+                    <input type="text" id="input-${agentId}" placeholder="Give direction..." onkeypress="handleKeyPress(event, '${agentId}')">
+                    <button onclick="sendMessage('${agentId}')">Send</button>
+                </div>
+            `;
+            container.appendChild(card);
+            agents[agentId] = { project, status, mode };
+        }
+
+        function removeAgentCard(agentId) {
+            const card = document.getElementById(`agent-${agentId}`);
+            if (card) card.remove();
+            delete agents[agentId];
+
+            const container = document.getElementById('agents-container');
+            if (container.children.length === 0) {
+                container.innerHTML = '<p class="no-agents">Click a project to start an agent</p>';
+            }
+        }
+
+        function updateAgentStatus(agentId, status) {
+            const card = document.getElementById(`agent-${agentId}`);
+            if (!card) return;
+
+            const dot = card.querySelector('.status-dot');
+            dot.className = `status-dot status-${status}`;
+
+            const statusEl = document.getElementById(`status-${agentId}`);
+            if (status === 'working') {
+                statusEl.textContent = 'Working...';
+            } else if (status === 'needs_attention') {
+                statusEl.textContent = 'Needs your attention';
+            } else {
+                statusEl.textContent = 'Idle';
+            }
+
+            if (agents[agentId]) {
+                agents[agentId].status = status;
+            }
+        }
+
+        function extractText(data) {
+            if (data.type === 'assistant' && data.message) {
+                const blocks = data.message.content || [];
+                let text = '';
+                for (const block of blocks) {
+                    if (block.type === 'text') {
+                        text += block.text;
+                    }
+                }
+                return text;
+            }
+            return '';
+        }
+
+        function updateAgentPreview(agentId, msg) {
+            const text = extractText(msg.content);
+            if (!text) return;
+
+            const statusEl = document.getElementById(`status-${agentId}`);
+            if (statusEl) {
+                const preview = text.slice(0, 60) + (text.length > 60 ? '...' : '');
+                statusEl.textContent = preview;
+            }
+        }
+
+        function handleInterrupt(agentId, msg) {
+            const agent = agents[agentId];
+            if (!agent) return;
+
+            const text = extractText(msg.content);
+            if (!text) return;
+
+            // Update agent preview too
+            updateAgentPreview(agentId, msg);
+
+            // Add to inbox with interrupt type
+            addToInbox(agentId, agent.project, text, msg.interrupt_type || 'question');
+        }
+
+        function addToInbox(agentId, project, text, interruptType) {
+            const list = document.getElementById('inbox-list');
+            const noInbox = list.querySelector('.no-inbox');
+            if (noInbox) noInbox.remove();
+
+            const item = document.createElement('div');
+            item.className = `inbox-item ${interruptType}`;
+
+            const time = new Date().toLocaleTimeString();
+
+            // Type badge
+            const badges = {
+                question: '❓',
+                approval: '⚡',
+                plan: '📋',
+            };
+            const badge = badges[interruptType] || '💬';
+
+            item.innerHTML = `
+                <div class="inbox-header">
+                    <span class="inbox-project">${badge} ${project}</span>
+                    <span class="inbox-time">${time}</span>
+                </div>
+                <div class="inbox-content">${escapeHtml(text)}</div>
+                <div class="inbox-reply">
+                    <input type="text" placeholder="Reply..." onkeypress="handleInboxKeyPress(event, '${agentId}', this)">
+                    <button onclick="sendInboxReply('${agentId}', this)">Reply</button>
+                </div>
+            `;
+
+            // Add to top
+            list.insertBefore(item, list.firstChild);
+
+            // Keep only last 50 items
+            while (list.children.length > 50) {
+                list.removeChild(list.lastChild);
+            }
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        async function startAgent(project) {
+            // Check if already running
+            for (const [id, agent] of Object.entries(agents)) {
+                if (agent.project === project) {
+                    // Focus the input
+                    const input = document.getElementById(`input-${id}`);
+                    if (input) input.focus();
+                    return;
+                }
+            }
+
+            const mode = document.getElementById('mode-select').value;
+
+            const res = await fetch('/agents', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ project, mode })
+            });
+            const data = await res.json();
+
+            if (data.agent_id) {
+                createAgentCard(data.agent_id, data.project, 'working', mode);
+                markProjectRunning(project, true);
+            }
+        }
+
+        async function closeAgent(agentId) {
+            await fetch(`/agents/${agentId}`, { method: 'DELETE' });
+        }
+
+        function sendMessage(agentId) {
+            const input = document.getElementById(`input-${agentId}`);
+            const content = input.value.trim();
+            if (!content) return;
+
+            ws.send(JSON.stringify({ agent_id: agentId, content }));
+
+            // Add to inbox as sent message
+            const agent = agents[agentId];
+            if (agent) {
+                addToInbox(agentId, agent.project, `You: ${content}`, false);
+            }
+
+            input.value = '';
+        }
+
+        function sendInboxReply(agentId, btn) {
+            const input = btn.parentElement.querySelector('input');
+            const content = input.value.trim();
+            if (!content) return;
+
+            ws.send(JSON.stringify({ agent_id: agentId, content }));
+
+            // Add to inbox
+            const agent = agents[agentId];
+            if (agent) {
+                addToInbox(agentId, agent.project, `You: ${content}`, false);
+            }
+
+            // Remove the reply box
+            btn.parentElement.remove();
+        }
+
+        function handleKeyPress(event, agentId) {
+            if (event.key === 'Enter') {
+                sendMessage(agentId);
+            }
+        }
+
+        function handleInboxKeyPress(event, agentId, input) {
+            if (event.key === 'Enter') {
+                sendInboxReply(agentId, input.parentElement.querySelector('button'));
+            }
+        }
+
+        // Initialize
+        loadProjects();
+        connectWebSocket();
+    </script>
+</body>
+</html>
