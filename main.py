@@ -32,7 +32,14 @@ async def broadcast(message: dict):
         clients.remove(client)
 
 
-async def run_claude(agent_id: str, prompt: str, project_path: Path, session_id: str | None = None, mode: str = "normal"):
+async def run_claude(
+    agent_id: str,
+    prompt: str,
+    project_path: Path,
+    session_id: str | None = None,
+    mode: str = "normal",
+    is_initial: bool = False,
+):
     """Run claude CLI and stream output."""
     agent = agents.get(agent_id)
     if not agent:
@@ -61,6 +68,10 @@ async def run_claude(agent_id: str, prompt: str, project_path: Path, session_id:
     agent["process"] = process
 
     accumulated_text = ""
+    has_interrupt = False
+
+    if process.stdout is None:
+        return
 
     async for line in process.stdout:
         line_str = line.decode("utf-8", errors="replace").strip()
@@ -75,9 +86,8 @@ async def run_claude(agent_id: str, prompt: str, project_path: Path, session_id:
             if msg_type == "result" and "session_id" in data:
                 agent["session_id"] = data["session_id"]
 
-            # Detect interrupts (questions, approvals, plan mode)
             is_interrupt = False
-            interrupt_type = None  # question, approval, plan
+            interrupt_type = None
 
             # Check for assistant messages
             if msg_type == "assistant":
@@ -88,7 +98,19 @@ async def run_claude(agent_id: str, prompt: str, project_path: Path, session_id:
                         text = block.get("text", "")
                         accumulated_text += text
                         # Check for questions
-                        if "?" in text and any(q in text.lower() for q in ["would you", "should i", "do you want", "which", "what", "how"]):
+                        if "?" in text and any(
+                            q in text.lower()
+                            for q in [
+                                "would you",
+                                "should i",
+                                "do you want",
+                                "which",
+                                "what",
+                                "how",
+                                "prefer",
+                                "like me to",
+                            ]
+                        ):
                             is_interrupt = True
                             interrupt_type = "question"
                     # Check for tool use that needs attention
@@ -105,30 +127,54 @@ async def run_claude(agent_id: str, prompt: str, project_path: Path, session_id:
                             is_interrupt = True
                             interrupt_type = "approval"
 
-            await broadcast({
-                "agent_id": agent_id,
-                "type": "interrupt" if is_interrupt else "output",
-                "interrupt_type": interrupt_type,
-                "content": data,
-                "raw": line_str,
-            })
+            if is_interrupt:
+                has_interrupt = True
+
+            await broadcast(
+                {
+                    "agent_id": agent_id,
+                    "type": "interrupt" if is_interrupt else "output",
+                    "interrupt_type": interrupt_type,
+                    "content": data,
+                    "raw": line_str,
+                }
+            )
 
             if is_interrupt:
                 agent["status"] = "needs_attention"
-                await broadcast({"agent_id": agent_id, "type": "status", "status": "needs_attention"})
+                await broadcast(
+                    {
+                        "agent_id": agent_id,
+                        "type": "status",
+                        "status": "needs_attention",
+                    }
+                )
 
         except json.JSONDecodeError:
             # Non-JSON output, send as raw
-            await broadcast({
-                "agent_id": agent_id,
-                "type": "output",
-                "content": {"raw": line_str},
-                "raw": line_str,
-            })
+            await broadcast(
+                {
+                    "agent_id": agent_id,
+                    "type": "output",
+                    "content": {"raw": line_str},
+                    "raw": line_str,
+                }
+            )
 
     await process.wait()
     agent["process"] = None
     agent["status"] = "idle"
+
+    if accumulated_text and not has_interrupt:
+        await broadcast(
+            {
+                "agent_id": agent_id,
+                "type": "interrupt",
+                "interrupt_type": "status" if is_initial else "complete",
+                "content": {"type": "completion", "text": accumulated_text},
+            }
+        )
+
     await broadcast({"agent_id": agent_id, "type": "status", "status": "idle"})
 
 
@@ -139,7 +185,8 @@ async def list_projects():
         return {"projects": []}
 
     projects = [
-        d.name for d in PROJECTS_DIR.iterdir()
+        d.name
+        for d in PROJECTS_DIR.iterdir()
         if d.is_dir() and not d.name.startswith(".")
     ]
     return {"projects": sorted(projects)}
@@ -156,9 +203,7 @@ async def create_agent(data: dict):
     if not project_path.exists():
         return {"error": "project not found"}, 404
 
-    # Options from request
-    mode = data.get("mode", "normal")  # normal, plan, yolo
-
+    mode = data.get("mode", "normal")
     agent_id = str(uuid.uuid4())[:8]
     agents[agent_id] = {
         "project": project,
@@ -169,9 +214,13 @@ async def create_agent(data: dict):
         "mode": mode,
     }
 
-    # Start with initial prompt
-    initial_prompt = "Give me a one-line repo status. Format: 'branch: status. Recent: brief summary of last 2-3 commits'. No markdown, no tables, no headers. Be terse. Then wait."
-    asyncio.create_task(run_claude(agent_id, initial_prompt, project_path, mode=mode))
+    initial_prompt = (
+        "Give me a one-line repo status. Format: 'branch: status. Recent: brief summary of last 2-3 commits'. "
+        "No markdown, no tables, no headers. Be terse. Then wait."
+    )
+    asyncio.create_task(
+        run_claude(agent_id, initial_prompt, project_path, mode=mode, is_initial=True)
+    )
 
     return {"agent_id": agent_id, "project": project, "mode": mode}
 
@@ -199,12 +248,14 @@ async def websocket_endpoint(websocket: WebSocket):
 
     # Send current agent states
     for agent_id, agent in agents.items():
-        await websocket.send_json({
-            "agent_id": agent_id,
-            "type": "init",
-            "project": agent["project"],
-            "status": agent["status"],
-        })
+        await websocket.send_json(
+            {
+                "agent_id": agent_id,
+                "type": "init",
+                "project": agent["project"],
+                "status": agent["status"],
+            }
+        )
 
     try:
         while True:
@@ -214,7 +265,9 @@ async def websocket_endpoint(websocket: WebSocket):
 
             agent = agents.get(agent_id)
             if not agent:
-                await websocket.send_json({"error": "agent not found", "agent_id": agent_id})
+                await websocket.send_json(
+                    {"error": "agent not found", "agent_id": agent_id}
+                )
                 continue
 
             # Don't send if already processing
@@ -223,13 +276,15 @@ async def websocket_endpoint(websocket: WebSocket):
                 continue
 
             # Run claude with the user's message
-            asyncio.create_task(run_claude(
-                agent_id,
-                content,
-                agent["project_path"],
-                agent.get("session_id"),
-                agent.get("mode", "normal"),
-            ))
+            asyncio.create_task(
+                run_claude(
+                    agent_id,
+                    content,
+                    agent["project_path"],
+                    agent.get("session_id"),
+                    agent.get("mode", "normal"),
+                )
+            )
 
     except WebSocketDisconnect:
         clients.remove(websocket)
@@ -246,4 +301,5 @@ async def index():
 
 if __name__ == "__main__":
     import uvicorn
+
     uvicorn.run(app, host="127.0.0.1", port=8000)
