@@ -255,8 +255,16 @@
             gap: 8px;
             padding: 8px 12px;
             background: var(--bg-card);
+            border: 1px solid var(--border);
             border-radius: 6px;
             font-size: 13px;
+            cursor: pointer;
+            transition: all 0.15s ease;
+        }
+
+        .working-agent:hover {
+            background: var(--bg-hover);
+            border-color: var(--accent);
         }
 
         .working-agent .dot {
@@ -278,6 +286,23 @@
             overflow: hidden;
             text-overflow: ellipsis;
             white-space: nowrap;
+            flex: 1;
+        }
+
+        .working-agent-close {
+            background: transparent;
+            border: none;
+            color: var(--text-muted);
+            cursor: pointer;
+            padding: 2px 6px;
+            font-size: 14px;
+            border-radius: 4px;
+            transition: all 0.15s ease;
+        }
+
+        .working-agent-close:hover {
+            background: var(--error);
+            color: white;
         }
 
         /* ============ CONVERSATION VIEW ============ */
@@ -317,6 +342,24 @@
         .conversation-project {
             font-weight: 600;
             font-size: 16px;
+            flex: 1;
+        }
+
+        .conversation-close {
+            padding: 8px 12px;
+            background: transparent;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            color: var(--text-muted);
+            font-size: 14px;
+            cursor: pointer;
+            transition: all 0.15s ease;
+        }
+
+        .conversation-close:hover {
+            background: var(--error);
+            border-color: var(--error);
+            color: white;
         }
 
         .conversation-messages {
@@ -543,6 +586,7 @@
                 <div class="conversation-header">
                     <button class="back-btn" onclick="showInbox()">← Back</button>
                     <span id="conversation-project" class="conversation-project"></span>
+                    <button id="conversation-close" class="conversation-close" onclick="closeCurrentAgent()">Stop Agent</button>
                 </div>
                 <div id="conversation-messages" class="conversation-messages"></div>
                 <div class="conversation-input">
@@ -762,13 +806,14 @@
             section.style.display = 'block';
             container.innerHTML = workingAgents.map(([id, agent]) => {
                 const lastMessage = agent.messages[agent.messages.length - 1];
-                const preview = lastMessage ? lastMessage.content.slice(0, 50) + '...' : 'Working...';
+                const preview = lastMessage ? lastMessage.content.slice(0, 40) : 'Starting...';
                 
                 return `
                     <div class="working-agent" onclick="openConversation('${id}')">
                         <span class="dot"></span>
                         <span class="working-agent-name">${escapeHtml(agent.project)}</span>
                         <span class="working-agent-status">${escapeHtml(preview)}</span>
+                        <button class="working-agent-close" onclick="event.stopPropagation(); closeAgent('${id}')" title="Stop agent">×</button>
                     </div>
                 `;
             }).join('');
@@ -874,6 +919,17 @@
 
         function closeProjectModal() {
             document.getElementById('project-modal').classList.remove('active');
+        }
+
+        async function closeAgent(agentId) {
+            await fetch(`/agents/${agentId}`, { method: 'DELETE' });
+        }
+
+        async function closeCurrentAgent() {
+            if (state.currentAgent) {
+                await closeAgent(state.currentAgent);
+                showInbox();
+            }
         }
 
         async function selectProject(project) {
