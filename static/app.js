@@ -36,6 +36,9 @@ function connectWebSocket() {
 function handleMessage(msg) {
     const agentId = msg.agent_id;
 
+    // DEBUG: Log all incoming messages
+    console.log('[WS] Received:', msg.type, 'agent:', agentId, msg);
+
     if (msg.type === 'approval_request') {
         showApprovalModal(msg);
         return;
@@ -135,11 +138,16 @@ function handleMessage(msg) {
 
     // Output (Text/Completion)
     const agent = state.agents[agentId];
-    if (!agent) return;
+    if (!agent) {
+        console.warn('[WS] Agent not found in state:', agentId, 'Known agents:', Object.keys(state.agents));
+        return;
+    }
 
     const text = extractText(msg.content);
+    console.log('[WS] Extracted text:', text ? text.substring(0, 100) : '(empty)', 'from content type:', msg.content?.type);
     if (text) {
         processAgentMessage(agent, text, msg.content.type === 'completion');
+        console.log('[WS] Agent messages now:', agent.messages.length);
     }
 
     // Interrupts (Notification)
@@ -181,7 +189,11 @@ function processAgentMessage(agent, text, isCompletion) {
 }
 
 function extractText(data) {
-    if (!data) return '';
+    if (!data) {
+        console.log('[extractText] No data');
+        return '';
+    }
+    console.log('[extractText] data.type:', data.type, 'keys:', Object.keys(data));
     if (data.type === 'completion' && data.text) {
         return data.text;
     }
@@ -194,6 +206,10 @@ function extractText(data) {
             }
         }
         return text;
+    }
+    // DEBUG: Log unhandled types
+    if (data.type && data.type !== 'result') {
+        console.log('[extractText] Unhandled type:', data.type, data);
     }
     return '';
 }
@@ -541,8 +557,12 @@ function renderConversation() {
 
 function renderConversationMessages() {
     const agent = state.agents[state.currentAgent];
-    if (!agent) return;
+    if (!agent) {
+        console.log('[render] No agent for currentAgent:', state.currentAgent);
+        return;
+    }
 
+    console.log('[render] Rendering', agent.messages.length, 'messages for', state.currentAgent);
     const container = document.getElementById('conversation-messages');
     container.innerHTML = agent.messages.map(msg => `
         <div class="message ${msg.role}">
@@ -781,15 +801,20 @@ async function selectProject(project) {
     delete state.agents[tempId];
 
     if (data.agent_id) {
-        state.agents[data.agent_id] = {
-            project: data.project,
-            status: 'working',
-            messages: [],
-            tools: [],
-            todos: [],
-            mode: mode,
-        };
+        // Only create if not already created by init broadcast
+        if (!state.agents[data.agent_id]) {
+            state.agents[data.agent_id] = {
+                project: data.project,
+                status: 'working',
+                messages: [],
+                tools: [],
+                todos: [],
+                mode: mode,
+            };
+        }
         renderAll();
+        // Auto-open the conversation
+        openConversation(data.agent_id);
     }
 }
 

@@ -242,8 +242,8 @@ async def run_claude(
     agent["status"] = "working"
     await broadcast({"agent_id": agent_id, "type": "status", "status": "working"})
 
-    # Build base command
-    cmd = ["claude", "-p", prompt, "--output-format", "stream-json", "--verbose"]
+    # Build base command - use stream-json input to avoid stdin blocking issues
+    cmd = ["claude", "--output-format", "stream-json", "--input-format", "stream-json", "--verbose"]
 
     mcp_config_path = None
 
@@ -299,6 +299,19 @@ async def run_claude(
             cwd=project_path,
         )
         agent["process"] = process
+
+        # Send prompt via stdin in stream-json format
+        if process.stdin:
+            prompt_msg = json.dumps({
+                "type": "user",
+                "message": {
+                    "role": "user",
+                    "content": [{"type": "text", "text": prompt}]
+                }
+            })
+            print(f"[Agent {agent_id}] Sending prompt via stdin", file=sys.stderr)
+            process.stdin.write((prompt_msg + "\n").encode())
+            await process.stdin.drain()
 
         # Start stderr reader task
         async def read_stderr():
@@ -483,6 +496,15 @@ async def create_agent(data: dict):
 
     # Initialize empty auto-approve patterns for this agent
     auto_approve_patterns[agent_id] = set()
+
+    # Broadcast init so frontend knows about the agent before output arrives
+    await broadcast({
+        "agent_id": agent_id,
+        "type": "init",
+        "project": project,
+        "status": "idle",
+        "mode": mode,
+    })
 
     initial_prompt = (
         "Generate an Executive Summary of this project.\n\n"
@@ -780,10 +802,17 @@ async def websocket_endpoint(websocket: WebSocket):
             process = agent.get("process")
 
             if process and process.returncode is None:
-                # Agent is running, send input to stdin
+                # Agent is running, send input to stdin in stream-json format
                 if process.stdin:
                     try:
-                        process.stdin.write((content + "\n").encode())
+                        user_msg = json.dumps({
+                            "type": "user",
+                            "message": {
+                                "role": "user",
+                                "content": [{"type": "text", "text": content}]
+                            }
+                        })
+                        process.stdin.write((user_msg + "\n").encode())
                         await process.stdin.drain()
                         agent["status"] = "working"
                         await broadcast(

@@ -21,21 +21,23 @@ async def test_dashboard():
     # Start the server
     print("Starting server...")
     server = subprocess.Popen(
-        ["uv", "run", "uvicorn", "main:app", "--host", "127.0.0.1", "--port", "8765"],
+        ["uv", "run", "uvicorn", "main:app", "--host", "127.0.0.1", "--port", "8000"],
         stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        cwd=Path(__file__).parent,
+        stderr=subprocess.PIPE,
+        preexec_fn=os.setsid,
     )
 
-    # Wait for server to start
+    # Give the server a moment to start
     time.sleep(2)
 
     try:
         async with async_playwright() as p:
             browser = await p.chromium.launch(headless=True)
-            page = await browser.new_page(viewport={"width": 1400, "height": 900})
+            page = await browser.new_page()
 
-            # Collect console messages
+            # 1. Load Dashboard
+            print("Loading dashboard...")
+            await page.goto("http://127.0.0.1:8000")
             console_messages = []
             page.on(
                 "console",
