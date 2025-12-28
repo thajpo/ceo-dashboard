@@ -13,6 +13,8 @@ const state = {
     diffData: null,
     selectedFile: null,
     ws: null,
+    pendingApproval: null,
+    yoloConfirmed: false,
 };
 
 // ============ WEBSOCKET ============
@@ -34,7 +36,11 @@ function connectWebSocket() {
 function handleMessage(msg) {
     const agentId = msg.agent_id;
 
-    // Init - Receive list of agents
+    if (msg.type === 'approval_request') {
+        showApprovalModal(msg);
+        return;
+    }
+
     if (msg.type === 'init') {
         if (!state.agents[agentId]) {
             state.agents[agentId] = {
@@ -828,6 +834,125 @@ function escapeHtml(text) {
     return div.innerHTML;
 }
 
+// ============ MODE HANDLING ============
+const MODE_DESCRIPTIONS = {
+    'plan': 'Claude analyzes but makes no changes. Best for reviewing plans.',
+    'normal': 'You approve each file edit and shell command before execution.',
+    'auto-edit': 'File edits are auto-approved. You only review shell commands.',
+    'yolo': 'Full autonomy. Claude executes everything without asking.',
+};
+
+function handleModeChange() {
+    const select = document.getElementById('mode-select');
+    const mode = select.value;
+    const desc = document.getElementById('mode-description');
+    
+    if (mode === 'yolo' && !state.yoloConfirmed) {
+        document.getElementById('yolo-modal').classList.add('active');
+        document.getElementById('yolo-confirm-input').value = '';
+        document.getElementById('yolo-confirm-input').focus();
+        validateYoloConfirm();
+        select.value = 'plan';
+        desc.textContent = MODE_DESCRIPTIONS['plan'];
+        return;
+    }
+    
+    desc.textContent = MODE_DESCRIPTIONS[mode] || '';
+}
+
+function validateYoloConfirm() {
+    const input = document.getElementById('yolo-confirm-input');
+    const btn = document.getElementById('yolo-confirm-btn');
+    const isValid = input.value.toLowerCase().trim() === 'agree';
+    
+    btn.disabled = !isValid;
+    btn.style.opacity = isValid ? '1' : '0.5';
+    btn.style.cursor = isValid ? 'pointer' : 'not-allowed';
+}
+
+function confirmYoloMode() {
+    state.yoloConfirmed = true;
+    document.getElementById('yolo-modal').classList.remove('active');
+    document.getElementById('mode-select').value = 'yolo';
+    document.getElementById('mode-description').textContent = MODE_DESCRIPTIONS['yolo'];
+}
+
+function cancelYoloMode() {
+    document.getElementById('yolo-modal').classList.remove('active');
+    document.getElementById('mode-select').value = 'plan';
+    document.getElementById('mode-description').textContent = MODE_DESCRIPTIONS['plan'];
+}
+
+// ============ APPROVAL MODAL ============
+function showApprovalModal(data) {
+    state.pendingApproval = {
+        request_id: data.request_id,
+        agent_id: data.agent_id,
+        tool_name: data.tool_name,
+        tool_input: data.tool_input,
+        pattern: data.pattern,
+        cwd: data.cwd,
+    };
+    
+    document.getElementById('approval-tool').textContent = data.tool_name;
+    document.getElementById('approval-command').textContent = data.command_display || JSON.stringify(data.tool_input, null, 2);
+    document.getElementById('approval-cwd').textContent = data.cwd;
+    document.getElementById('approval-pattern').textContent = data.pattern;
+    
+    const title = data.tool_name === 'Bash' ? 'Shell Command Approval' : 'File Edit Approval';
+    document.getElementById('approval-title').textContent = title;
+    
+    document.getElementById('approval-modal').classList.add('active');
+}
+
+function sendApproval(decision) {
+    if (!state.pendingApproval) return;
+    
+    state.ws.send(JSON.stringify({
+        type: 'approval_response',
+        request_id: state.pendingApproval.request_id,
+        agent_id: state.pendingApproval.agent_id,
+        decision: decision,
+        tool_input: state.pendingApproval.tool_input,
+    }));
+    
+    closeApprovalModal();
+}
+
+function sendApprovalWithPattern() {
+    if (!state.pendingApproval) return;
+    
+    state.ws.send(JSON.stringify({
+        type: 'approval_response',
+        request_id: state.pendingApproval.request_id,
+        agent_id: state.pendingApproval.agent_id,
+        decision: 'allow',
+        pattern: state.pendingApproval.pattern,
+        tool_input: state.pendingApproval.tool_input,
+    }));
+    
+    closeApprovalModal();
+}
+
+function stopAgentFromApproval() {
+    if (!state.pendingApproval) return;
+    
+    const agentId = state.pendingApproval.agent_id;
+    
+    sendApproval('deny');
+    
+    state.ws.send(JSON.stringify({
+        type: 'stop_agent',
+        agent_id: agentId,
+    }));
+}
+
+function closeApprovalModal() {
+    state.pendingApproval = null;
+    document.getElementById('approval-modal').classList.remove('active');
+}
+
 // ============ INIT ============
 connectWebSocket();
 document.getElementById('sidebar').classList.add('open');
+handleModeChange();

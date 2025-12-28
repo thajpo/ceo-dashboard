@@ -120,12 +120,85 @@
                 <label
                     style="display:block; font-size:12px; color:var(--text-muted); margin-bottom:8px; text-transform:uppercase; letter-spacing:0.05em;">Operating
                     Mode</label>
-                <select id="mode-select"
+                <select id="mode-select" onchange="handleModeChange()"
                     style="width:100%; padding:10px; background:var(--bg-card); border:1px solid var(--border); color:var(--text-primary); border-radius:8px; font-size:14px;">
-                    <option value="plan">Plan Mode (Recommended)</option>
-                    <option value="normal">Review Mode</option>
-                    <option value="yolo">Autonomous (YOLO)</option>
+                    <option value="plan">Plan Mode - Read only, no changes</option>
+                    <option value="normal">Normal Mode - Approve edits & commands</option>
+                    <option value="auto-edit">Auto-Edit Mode - Approve commands only</option>
+                    <option value="yolo">Autonomous (YOLO) - Full autonomy</option>
                 </select>
+                <div id="mode-description" style="font-size:12px; color:var(--text-muted); margin-top:8px; padding:8px; background:rgba(0,0,0,0.2); border-radius:6px;">
+                    Claude analyzes but makes no changes. Best for reviewing plans.
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- YOLO Confirmation Modal -->
+    <div id="yolo-modal" class="modal-overlay">
+        <div class="modal" style="max-width:450px;">
+            <div class="modal-header" style="border-bottom-color:var(--error);">
+                <h2 style="color:var(--error);">⚠️ YOLO Mode Warning</h2>
+            </div>
+            <div class="modal-body" style="padding:20px;">
+                <p style="color:var(--text-secondary); margin-bottom:16px; line-height:1.6;">
+                    This mode allows Claude to execute <strong style="color:var(--error);">ANY command</strong> without asking, including:
+                </p>
+                <ul style="color:var(--text-muted); margin-left:20px; margin-bottom:20px; line-height:1.8;">
+                    <li>Installing/removing packages</li>
+                    <li>Modifying or deleting files</li>
+                    <li>Running arbitrary scripts</li>
+                    <li>Network operations</li>
+                </ul>
+                <p style="color:var(--text-secondary); margin-bottom:16px;">
+                    Only use this in sandboxed environments or if you fully trust the task.
+                </p>
+                <label style="display:block; font-size:12px; color:var(--text-muted); margin-bottom:8px;">
+                    Type "agree" to confirm:
+                </label>
+                <input type="text" id="yolo-confirm-input" 
+                    style="width:100%; padding:10px; background:var(--bg-card); border:1px solid var(--border); color:var(--text-primary); border-radius:6px; font-size:14px;"
+                    placeholder="Type 'agree' here..."
+                    oninput="validateYoloConfirm()">
+            </div>
+            <div style="padding:16px 20px; border-top:1px solid var(--border); display:flex; gap:12px; justify-content:flex-end;">
+                <button class="btn btn-secondary" onclick="cancelYoloMode()">Cancel</button>
+                <button id="yolo-confirm-btn" class="btn" style="background:var(--error); color:white; opacity:0.5; cursor:not-allowed;" disabled onclick="confirmYoloMode()">
+                    Enable YOLO Mode
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Approval Request Modal -->
+    <div id="approval-modal" class="modal-overlay">
+        <div class="modal" style="max-width:550px;">
+            <div class="modal-header">
+                <h2 id="approval-title">Permission Required</h2>
+            </div>
+            <div class="modal-body" style="padding:20px;">
+                <div style="margin-bottom:16px;">
+                    <div style="font-size:11px; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.05em; margin-bottom:6px;">Tool</div>
+                    <div id="approval-tool" style="font-size:16px; font-weight:600; color:var(--accent);"></div>
+                </div>
+                <div style="margin-bottom:16px;">
+                    <div style="font-size:11px; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.05em; margin-bottom:6px;">Command / File</div>
+                    <div id="approval-command" style="font-family:'JetBrains Mono', monospace; font-size:13px; background:rgba(0,0,0,0.3); padding:12px; border-radius:6px; word-break:break-all; max-height:120px; overflow-y:auto;"></div>
+                </div>
+                <div style="margin-bottom:8px;">
+                    <div style="font-size:11px; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.05em; margin-bottom:6px;">Working Directory</div>
+                    <div id="approval-cwd" style="font-family:'JetBrains Mono', monospace; font-size:12px; color:var(--text-muted);"></div>
+                </div>
+            </div>
+            <div style="padding:16px 20px; border-top:1px solid var(--border); display:flex; gap:12px; flex-wrap:wrap;">
+                <button class="btn btn-approve" onclick="sendApproval('allow')">Yes</button>
+                <button id="approval-yes-all-btn" class="btn" style="background:var(--accent); color:white;" onclick="sendApprovalWithPattern()">
+                    Yes to all <span id="approval-pattern"></span>
+                </button>
+                <button class="btn btn-reject" onclick="sendApproval('deny')">No</button>
+                <button class="btn btn-secondary" style="margin-left:auto; border-color:var(--error); color:var(--error);" onclick="stopAgentFromApproval()">
+                    Stop Agent
+                </button>
             </div>
         </div>
     </div>
