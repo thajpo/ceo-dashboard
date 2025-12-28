@@ -364,14 +364,14 @@ async def run_claude(
                     message = data.get("message", {})
                     content_blocks = message.get("content", [])
 
+                    # Accumulate all text blocks before storing
+                    accumulated_text = ""
                     for block in content_blocks:
                         block_type = block.get("type")
 
                         if block_type == "text":
                             text = block.get("text", "")
-                            # Store assistant text for persistence
-                            if text:
-                                agent["messages"].append({"role": "assistant", "content": text})
+                            accumulated_text += text
                             # Check for questions
                             if "?" in text and any(
                                 q in text.lower()
@@ -413,6 +413,10 @@ async def run_claude(
                                 is_interrupt = True
                                 interrupt_type = "plan"
 
+                    # Store accumulated assistant text for persistence (once per message)
+                    if accumulated_text:
+                        agent["messages"].append({"role": "assistant", "content": accumulated_text})
+
                 if is_interrupt:
                     agent["status"] = "needs_attention"
                     agent["waiting_on_user"] = True  # Needs user input
@@ -449,6 +453,10 @@ async def run_claude(
         # Wait for process and stderr task to complete
         await process.wait()
         stderr_task.cancel()
+        try:
+            await stderr_task
+        except asyncio.CancelledError:
+            pass
 
     finally:
         # Cleanup
@@ -673,7 +681,7 @@ async def handle_approve_request(request: Request):
 
     # Need user approval - create request and wait
     request_id = str(uuid.uuid4())
-    future: asyncio.Future = asyncio.get_event_loop().create_future()
+    future: asyncio.Future = asyncio.get_running_loop().create_future()
     pending_approvals[request_id] = future
 
     # Extract display info for UI
@@ -856,7 +864,11 @@ async def websocket_endpoint(websocket: WebSocket):
             )
 
     except WebSocketDisconnect:
-        clients.remove(websocket)
+        # Use try/except in case broadcast() already removed this client
+        try:
+            clients.remove(websocket)
+        except ValueError:
+            pass
 
 
 # =============================================================================

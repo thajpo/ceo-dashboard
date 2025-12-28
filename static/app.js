@@ -66,7 +66,7 @@ function handleMessage(msg) {
             if (msg.waiting_on_user) {
                 const lastMsg = messages[messages.length - 1];
                 const content = lastMsg ? lastMsg.content.substring(0, 100) : 'Agent ready';
-                addToInbox(agentId, content, msg.status === 'needs_attention' ? 'question' : 'completed');
+                addToInbox(agentId, content, msg.status === 'needs_attention' ? 'question' : 'ready');
             }
         }
         renderAll();
@@ -98,7 +98,7 @@ function handleMessage(msg) {
                 // Add to inbox when agent finishes its turn
                 const lastMsg = agent.messages[agent.messages.length - 1];
                 const content = lastMsg ? lastMsg.content.substring(0, 100) : 'Task completed';
-                addToInbox(agentId, content, 'completed');
+                addToInbox(agentId, content, 'ready');
             }
         }
         renderSidebar(); // Status dot update
@@ -611,21 +611,15 @@ function renderInputArea() {
                 <button class="btn btn-secondary" onclick="sendConversationMessage('Revise the plan')">Revise</button>
             </div>
         `;
-    } else if (needsInput) {
-        actionButtons = `
-            <div style="display:flex; gap:8px; margin-bottom:12px;">
-                <button class="btn btn-approve" onclick="sendConversationMessage('y')">Yes</button>
-                <button class="btn btn-approve" style="background:var(--accent);" onclick="sendConversationMessage('yes, and continue without asking')">Yes Always</button>
-                <button class="btn btn-reject" onclick="sendConversationMessage('n')">No</button>
-            </div>
-        `;
     }
+    // Note: Removed generic Yes/No buttons - they don't make sense for AskUserQuestion
+    // which presents specific multi-choice options. User types their response instead.
 
     inputContainer.innerHTML = `
         <div style="max-width:800px; margin:0 auto;">
             ${actionButtons}
             <div class="input-wrapper">
-                <input type="text" id="conversation-input" placeholder="${needsInput ? 'Or type a response...' : 'Give instructions...'}" onkeypress="handleConversationKeypress(event)">
+                <input type="text" id="conversation-input" placeholder="${needsInput ? 'Type your response...' : 'Give instructions...'}" onkeypress="handleConversationKeypress(event)">
                 <button class="btn btn-primary" onclick="sendConversationMessage()">Send</button>
             </div>
         </div>
@@ -730,12 +724,14 @@ async function executePlan() {
     const agent = state.agents[state.currentAgent];
     if (!agent) return;
 
+    state.hasResponded = true;
+    state.currentInboxItem = null;
     agent.pendingInteraction = null;
     agent.mode = 'normal';
 
     await fetch(`/agents/${state.currentAgent}/execute`, { method: 'POST' });
 
-    renderInputArea();
+    showInbox();
 }
 
 // ============ PROJECT MODAL ============
@@ -827,8 +823,7 @@ async function selectProject(project) {
             };
         }
         renderAll();
-        // Auto-open the conversation
-        openConversation(data.agent_id);
+        // Stay in inbox - agent will appear there when summary is ready
     }
 }
 
@@ -837,6 +832,7 @@ function getStatusColor(type) {
     switch (type) {
         case 'question': return 'var(--warning)';
         case 'approval': return 'var(--error)';
+        case 'ready': return 'var(--warning)';
         case 'complete': return 'var(--success)';
         case 'update': return 'var(--accent)';
         case 'status': return 'var(--accent)';
@@ -849,6 +845,7 @@ function getTypeLabel(type) {
         case 'question': return 'Needs Input';
         case 'approval': return 'Approval Required';
         case 'plan': return 'Plan Ready';
+        case 'ready': return 'Ready for Input';
         case 'complete': return 'Completed';
         case 'update': return 'Update';
         case 'status': return 'Status';
