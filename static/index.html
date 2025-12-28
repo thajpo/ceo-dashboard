@@ -1,1010 +1,137 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>CEO Dashboard</title>
-    <style>
-        :root {
-            --bg-primary: #0a0a0f;
-            --bg-secondary: #12121a;
-            --bg-card: #1a1a24;
-            --bg-hover: #22222e;
-            --border: #2a2a3a;
-            --text-primary: #f0f0f5;
-            --text-secondary: #8888a0;
-            --text-muted: #555566;
-            --accent: #6366f1;
-            --accent-hover: #7577f5;
-            --success: #22c55e;
-            --warning: #eab308;
-            --error: #ef4444;
-        }
-
-        * {
-            box-sizing: border-box;
-            margin: 0;
-            padding: 0;
-        }
-
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;
-            background: var(--bg-primary);
-            color: var(--text-primary);
-            height: 100vh;
-            overflow: hidden;
-        }
-
-        /* Layout */
-        .app {
-            height: 100vh;
-            display: flex;
-            flex-direction: column;
-        }
-
-        /* Header */
-        .header {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            padding: 16px 24px;
-            border-bottom: 1px solid var(--border);
-            background: var(--bg-secondary);
-        }
-
-        .header h1 {
-            font-size: 18px;
-            font-weight: 600;
-            letter-spacing: -0.02em;
-        }
-
-        .header-actions {
-            display: flex;
-            align-items: center;
-            gap: 12px;
-        }
-
-        .project-select {
-            padding: 8px 12px;
-            background: var(--bg-card);
-            border: 1px solid var(--border);
-            border-radius: 6px;
-            color: var(--text-primary);
-            font-size: 14px;
-            cursor: pointer;
-            min-width: 180px;
-        }
-
-        .project-select:hover {
-            border-color: var(--accent);
-        }
-
-        .btn {
-            padding: 8px 16px;
-            border: none;
-            border-radius: 6px;
-            font-size: 14px;
-            font-weight: 500;
-            cursor: pointer;
-            transition: all 0.15s ease;
-        }
-
-        .btn-primary {
-            background: var(--accent);
-            color: white;
-        }
-
-        .btn-primary:hover {
-            background: var(--accent-hover);
-        }
-
-        .btn-secondary {
-            background: var(--bg-card);
-            color: var(--text-primary);
-            border: 1px solid var(--border);
-        }
-
-        .btn-secondary:hover {
-            background: var(--bg-hover);
-        }
-
-        /* Main Content */
-        .main {
-            flex: 1;
-            overflow: hidden;
-            display: flex;
-            flex-direction: column;
-        }
-
-        /* Views - only one visible at a time */
-        .view {
-            display: none;
-            flex: 1;
-            overflow: hidden;
-        }
-
-        .view.active {
-            display: flex;
-            flex-direction: column;
-        }
-
-        /* ============ INBOX VIEW ============ */
-        .inbox-view {
-            padding: 24px;
-            overflow-y: auto;
-        }
-
-        .inbox-empty {
-            text-align: center;
-            padding: 80px 24px;
-            color: var(--text-muted);
-        }
-
-        .inbox-empty h2 {
-            font-size: 20px;
-            font-weight: 500;
-            margin-bottom: 8px;
-            color: var(--text-secondary);
-        }
-
-        .inbox-empty p {
-            font-size: 14px;
-        }
-
-        .inbox-list {
-            max-width: 800px;
-            margin: 0 auto;
-            display: flex;
-            flex-direction: column;
-            gap: 12px;
-        }
-
-        .inbox-item {
-            background: var(--bg-card);
-            border: 1px solid var(--border);
-            border-radius: 12px;
-            padding: 20px;
-            cursor: pointer;
-            transition: all 0.15s ease;
-        }
-
-        .inbox-item:hover {
-            border-color: var(--accent);
-            background: var(--bg-hover);
-        }
-
-        .inbox-item-header {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            margin-bottom: 12px;
-        }
-
-        .inbox-item-project {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            font-weight: 600;
-            font-size: 15px;
-        }
-
-        .status-indicator {
-            width: 10px;
-            height: 10px;
-            border-radius: 50%;
-        }
-
-        .status-question { background: var(--warning); }
-        .status-approval { background: var(--error); }
-        .status-complete { background: var(--success); }
-        .status-info { background: var(--accent); }
-        .status-working { background: var(--accent); animation: pulse 1.5s infinite; }
-
-        @keyframes pulse {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0.4; }
-        }
-
-        .inbox-item-time {
-            font-size: 13px;
-            color: var(--text-muted);
-        }
-
-        .inbox-item-content {
-            font-size: 14px;
-            line-height: 1.6;
-            color: var(--text-secondary);
-            display: -webkit-box;
-            -webkit-line-clamp: 3;
-            -webkit-box-orient: vertical;
-            overflow: hidden;
-        }
-
-        .inbox-item-type {
-            margin-top: 12px;
-            font-size: 12px;
-            color: var(--text-muted);
-            text-transform: uppercase;
-            letter-spacing: 0.05em;
-        }
-
-        /* Working Agents Section */
-        .working-section {
-            border-top: 1px solid var(--border);
-            padding: 16px 24px;
-            background: var(--bg-secondary);
-        }
-
-        .working-header {
-            font-size: 12px;
-            color: var(--text-muted);
-            text-transform: uppercase;
-            letter-spacing: 0.05em;
-            margin-bottom: 12px;
-        }
-
-        .working-list {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 8px;
-        }
-
-        .working-agent {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            padding: 8px 12px;
-            background: var(--bg-card);
-            border: 1px solid var(--border);
-            border-radius: 6px;
-            font-size: 13px;
-            cursor: pointer;
-            transition: all 0.15s ease;
-        }
-
-        .working-agent:hover {
-            background: var(--bg-hover);
-            border-color: var(--accent);
-        }
-
-        .working-agent .dot {
-            width: 6px;
-            height: 6px;
-            border-radius: 50%;
-            background: var(--success);
-            animation: pulse 1.5s infinite;
-        }
-
-        .working-agent-name {
-            font-weight: 500;
-        }
-
-        .working-agent-status {
-            color: var(--text-muted);
-            font-size: 12px;
-            max-width: 200px;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            white-space: nowrap;
-            flex: 1;
-        }
-
-        .working-agent-close {
-            background: transparent;
-            border: none;
-            color: var(--text-muted);
-            cursor: pointer;
-            padding: 2px 6px;
-            font-size: 14px;
-            border-radius: 4px;
-            transition: all 0.15s ease;
-        }
-
-        .working-agent-close:hover {
-            background: var(--error);
-            color: white;
-        }
-
-        /* ============ CONVERSATION VIEW ============ */
-        .conversation-view.active {
-            display: flex;
-            flex-direction: column;
-        }
-
-        .conversation-header {
-            display: flex;
-            align-items: center;
-            padding: 16px 24px;
-            border-bottom: 1px solid var(--border);
-            background: var(--bg-secondary);
-            gap: 16px;
-        }
-
-        .back-btn {
-            display: flex;
-            align-items: center;
-            gap: 6px;
-            padding: 8px 12px;
-            background: transparent;
-            border: 1px solid var(--border);
-            border-radius: 6px;
-            color: var(--text-secondary);
-            font-size: 14px;
-            cursor: pointer;
-            transition: all 0.15s ease;
-        }
-
-        .back-btn:hover {
-            background: var(--bg-hover);
-            color: var(--text-primary);
-        }
-
-        .conversation-project {
-            font-weight: 600;
-            font-size: 16px;
-            flex: 1;
-        }
-
-        .conversation-close {
-            padding: 8px 12px;
-            background: transparent;
-            border: 1px solid var(--border);
-            border-radius: 6px;
-            color: var(--text-muted);
-            font-size: 14px;
-            cursor: pointer;
-            transition: all 0.15s ease;
-        }
-
-        .conversation-close:hover {
-            background: var(--error);
-            border-color: var(--error);
-            color: white;
-        }
-
-        .conversation-messages {
-            flex: 1;
-            overflow-y: auto;
-            padding: 24px;
-        }
-
-        .message {
-            max-width: 800px;
-            margin: 0 auto 16px;
-        }
-
-        .message-role {
-            font-size: 12px;
-            font-weight: 600;
-            color: var(--text-muted);
-            text-transform: uppercase;
-            letter-spacing: 0.05em;
-            margin-bottom: 8px;
-        }
-
-        .message-content {
-            background: var(--bg-card);
-            border-radius: 12px;
-            padding: 16px 20px;
-            font-size: 14px;
-            line-height: 1.7;
-            white-space: pre-wrap;
-        }
-
-        .message.user .message-content {
-            background: var(--accent);
-            color: white;
-            margin-left: auto;
-            max-width: 80%;
-        }
-
-        .message.assistant .message-content {
-            border: 1px solid var(--border);
-        }
-
-        .conversation-input {
-            padding: 16px 24px;
-            border-top: 1px solid var(--border);
-            background: var(--bg-secondary);
-        }
-
-        .input-wrapper {
-            max-width: 800px;
-            margin: 0 auto;
-            display: flex;
-            gap: 12px;
-        }
-
-        .input-wrapper input {
-            flex: 1;
-            padding: 14px 18px;
-            background: var(--bg-card);
-            border: 1px solid var(--border);
-            border-radius: 8px;
-            color: var(--text-primary);
-            font-size: 15px;
-        }
-
-        .input-wrapper input:focus {
-            outline: none;
-            border-color: var(--accent);
-        }
-
-        .input-wrapper input::placeholder {
-            color: var(--text-muted);
-        }
-
-        /* ============ PROJECT MODAL ============ */
-        .modal-overlay {
-            display: none;
-            position: fixed;
-            inset: 0;
-            background: rgba(0, 0, 0, 0.7);
-            z-index: 100;
-            align-items: center;
-            justify-content: center;
-        }
-
-        .modal-overlay.active {
-            display: flex;
-        }
-
-        .modal {
-            background: var(--bg-secondary);
-            border: 1px solid var(--border);
-            border-radius: 16px;
-            width: 90%;
-            max-width: 500px;
-            max-height: 80vh;
-            overflow: hidden;
-            display: flex;
-            flex-direction: column;
-        }
-
-        .modal-header {
-            padding: 20px 24px;
-            border-bottom: 1px solid var(--border);
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-        }
-
-        .modal-header h2 {
-            font-size: 18px;
-            font-weight: 600;
-        }
-
-        .modal-close {
-            background: transparent;
-            border: none;
-            color: var(--text-muted);
-            font-size: 24px;
-            cursor: pointer;
-            line-height: 1;
-        }
-
-        .modal-close:hover {
-            color: var(--text-primary);
-        }
-
-        .modal-body {
-            padding: 16px;
-            overflow-y: auto;
-            flex: 1;
-        }
-
-        .project-list {
-            display: flex;
-            flex-direction: column;
-            gap: 4px;
-        }
-
-        .project-option {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            padding: 12px 16px;
-            border-radius: 8px;
-            cursor: pointer;
-            transition: background 0.15s ease;
-        }
-
-        .project-option:hover {
-            background: var(--bg-hover);
-        }
-
-        .project-option.active {
-            background: var(--bg-card);
-        }
-
-        .project-option-name {
-            font-weight: 500;
-        }
-
-        .project-option-status {
-            font-size: 12px;
-            color: var(--text-muted);
-        }
-
-        .project-option.running .project-option-status {
-            color: var(--success);
-        }
-
-        .mode-selector {
-            padding: 16px 24px;
-            border-top: 1px solid var(--border);
-        }
-
-        .mode-selector label {
-            display: block;
-            font-size: 12px;
-            color: var(--text-muted);
-            margin-bottom: 8px;
-        }
-
-        .mode-selector select {
-            width: 100%;
-            padding: 10px 12px;
-            background: var(--bg-card);
-            border: 1px solid var(--border);
-            border-radius: 6px;
-            color: var(--text-primary);
-            font-size: 14px;
-        }
-    </style>
+    <link rel="stylesheet" href="/static/style.css">
 </head>
+
 <body>
     <div class="app">
         <!-- Header -->
         <header class="header">
-            <h1>CEO Dashboard</h1>
+            <div class="header-left" style="display:flex; align-items:center; gap:12px;">
+                <button id="sidebar-toggle" class="sidebar-toggle" onclick="toggleSidebar()" title="Toggle agents">
+                    <span id="sidebar-arrow">&#9664;</span>
+                </button>
+                <h1>CEO Dashboard</h1>
+            </div>
             <div class="header-actions">
                 <button class="btn btn-primary" onclick="openProjectModal()">+ Add Project</button>
             </div>
         </header>
 
         <!-- Main Content -->
-        <main class="main">
-            <!-- Inbox View -->
-            <div id="inbox-view" class="view active">
-                <div class="inbox-view">
-                    <div id="inbox-list" class="inbox-list">
-                        <div class="inbox-empty">
-                            <h2>No items need attention</h2>
-                            <p>Add a project to get started</p>
+        <div class="main-wrapper">
+            <!-- Sidebar -->
+            <aside id="sidebar" class="sidebar open">
+                <div class="sidebar-content">
+                    <div class="sidebar-header">Active Agents</div>
+                    <div id="sidebar-agents"></div>
+                </div>
+            </aside>
+
+            <main class="main">
+                <!-- Inbox View -->
+                <div id="inbox-view" class="view active">
+                    <div class="inbox-view">
+                        <div id="inbox-list" class="inbox-list">
+                            <!-- Filled by JS -->
                         </div>
                     </div>
                 </div>
-                <div id="working-section" class="working-section" style="display: none;">
-                    <div class="working-header">Working</div>
-                    <div id="working-list" class="working-list"></div>
-                </div>
-            </div>
 
-            <!-- Conversation View -->
-            <div id="conversation-view" class="view conversation-view">
-                <div class="conversation-header">
-                    <button class="back-btn" onclick="showInbox()">← Back</button>
-                    <span id="conversation-project" class="conversation-project"></span>
-                    <button id="conversation-close" class="conversation-close" onclick="closeCurrentAgent()">Stop Agent</button>
-                </div>
-                <div id="conversation-messages" class="conversation-messages"></div>
-                <div class="conversation-input">
-                    <div class="input-wrapper">
-                        <input type="text" id="conversation-input" placeholder="Type your response..." onkeypress="handleConversationKeypress(event)">
-                        <button class="btn btn-primary" onclick="sendConversationMessage()">Send</button>
+                <!-- Conversation View -->
+                <div id="conversation-view" class="view conversation-view">
+                    <div class="conversation-header">
+                        <button class="btn btn-secondary" onclick="showInbox()">← Back</button>
+                        <span id="conversation-project" class="conversation-project"></span>
+                        <div style="display:flex; gap:8px;">
+                            <button id="diff-toggle" class="btn btn-secondary" onclick="toggleDiffView()">View
+                                Diff</button>
+                            <button id="conversation-close" class="btn btn-secondary"
+                                style="border-color:var(--error); color:var(--error);"
+                                onclick="closeCurrentAgent()">Stop Agent</button>
+                        </div>
+                    </div>
+                    <div class="conversation-body">
+                        <div id="conversation-main" class="conversation-main">
+                            <div id="conversation-messages" class="conversation-messages"></div>
+                            <div class="conversation-input">
+                                <div class="input-wrapper">
+                                    <input type="text" id="conversation-input" placeholder="Give instructions..."
+                                        onkeypress="handleConversationKeypress(event)">
+                                    <button class="btn btn-primary" onclick="sendConversationMessage()">Send</button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Diff View Panel -->
+                        <div id="diff-view" class="diff-view">
+                            <div class="diff-file-list">
+                                <div
+                                    style="padding:12px 16px; border-bottom:1px solid var(--border); font-size:11px; font-weight:600; text-transform:uppercase; color:var(--text-muted);">
+                                    Changed Files</div>
+                                <div id="diff-file-list"></div>
+                            </div>
+                            <div style="flex:1; overflow:auto; display:flex; flex-direction:column;">
+                                <div id="diff-content-header"
+                                    style="padding:12px 20px; background:var(--bg-secondary); border-bottom:1px solid var(--border); font-family:monospace; font-size:13px;">
+                                </div>
+                                <div id="diff-content-body" class="diff-content-body"></div>
+                            </div>
+                        </div>
+
+                        <!-- Info Panel -->
+                        <div class="info-panel">
+                            <div class="info-tabs">
+                                <button class="info-tab active" onclick="switchInfoTab('tools')">Tools</button>
+                                <button class="info-tab" onclick="switchInfoTab('todos')">Todos</button>
+                            </div>
+                            <div class="info-content">
+                                <div id="info-tools" class="info-section active"></div>
+                                <div id="info-todos" class="info-section"></div>
+                            </div>
+                        </div>
                     </div>
                 </div>
-            </div>
-        </main>
+            </main>
+        </div>
     </div>
 
     <!-- Project Selection Modal -->
     <div id="project-modal" class="modal-overlay">
         <div class="modal">
             <div class="modal-header">
-                <h2>Add Project</h2>
-                <button class="modal-close" onclick="closeProjectModal()">&times;</button>
+                <h2>Add Agent</h2>
+                <button class="btn btn-secondary" style="padding:4px 8px;"
+                    onclick="closeProjectModal()">&times;</button>
             </div>
-            <div class="modal-body">
-                <div id="project-list" class="project-list"></div>
+            <div class="modal-body" style="padding:16px; max-height:400px; overflow-y:auto;">
+                <div id="project-list" style="display:flex; flex-direction:column; gap:4px;"></div>
             </div>
-            <div class="mode-selector">
-                <label>Agent Mode</label>
-                <select id="mode-select">
-                    <option value="normal">Normal - Ask for approval</option>
-                    <option value="plan">Plan - Read-only analysis</option>
-                    <option value="yolo">YOLO - Full autonomy</option>
+            <div style="padding:20px; border-top:1px solid var(--border); background:rgba(0,0,0,0.2);">
+                <label
+                    style="display:block; font-size:12px; color:var(--text-muted); margin-bottom:8px; text-transform:uppercase; letter-spacing:0.05em;">Operating
+                    Mode</label>
+                <select id="mode-select"
+                    style="width:100%; padding:10px; background:var(--bg-card); border:1px solid var(--border); color:var(--text-primary); border-radius:8px; font-size:14px;">
+                    <option value="normal">Review Mode (Recommended)</option>
+                    <option value="plan">Plan Only</option>
+                    <option value="yolo">Autonomous (YOLO)</option>
                 </select>
             </div>
         </div>
     </div>
 
-    <script>
-        // State
-        const state = {
-            agents: {},           // agentId -> { project, status, messages, mode }
-            inbox: [],            // [{ id, agentId, project, content, type, time }]
-            currentAgent: null,   // Currently viewing conversation
-            ws: null,
-        };
+    <!-- Hidden elements for compatibility with existing JS logic regarding 'working-section' -->
+    <div id="working-section" style="display:none;">
+        <div id="working-list"></div>
+    </div>
 
-        // ============ WEBSOCKET ============
-        function connectWebSocket() {
-            state.ws = new WebSocket(`ws://${location.host}/ws`);
-            
-            state.ws.onmessage = (event) => {
-                const msg = JSON.parse(event.data);
-                handleMessage(msg);
-            };
-            
-            state.ws.onclose = () => {
-                setTimeout(connectWebSocket, 1000);
-            };
-        }
-
-        function handleMessage(msg) {
-            const agentId = msg.agent_id;
-            
-            if (msg.type === 'init') {
-                // Agent reconnected - restore state
-                if (!state.agents[agentId]) {
-                    state.agents[agentId] = {
-                        project: msg.project,
-                        status: msg.status,
-                        messages: [],
-                        mode: msg.mode || 'normal',
-                    };
-                }
-                renderAll();
-                return;
-            }
-            
-            if (msg.type === 'deleted') {
-                delete state.agents[agentId];
-                // Remove from inbox
-                state.inbox = state.inbox.filter(i => i.agentId !== agentId);
-                renderAll();
-                return;
-            }
-            
-            if (msg.type === 'status') {
-                if (state.agents[agentId]) {
-                    state.agents[agentId].status = msg.status;
-                }
-                renderAll();
-                return;
-            }
-            
-            const agent = state.agents[agentId];
-            if (!agent) return;
-            
-            const text = extractText(msg.content);
-            
-            if (text) {
-                const lastMsg = agent.messages[agent.messages.length - 1];
-                const isDuplicate = lastMsg && lastMsg.role === 'assistant' && lastMsg.content === text;
-                
-                if (!isDuplicate) {
-                    agent.messages.push({
-                        role: 'assistant',
-                        content: text,
-                        time: new Date(),
-                    });
-                }
-            }
-            
-            if (msg.type === 'interrupt') {
-                addToInbox(agentId, text, msg.interrupt_type);
-            }
-            
-            renderAll();
-            
-            // If viewing this conversation, scroll to bottom
-            if (state.currentAgent === agentId) {
-                const container = document.getElementById('conversation-messages');
-                container.scrollTop = container.scrollHeight;
-            }
-        }
-
-        function extractText(data) {
-            if (!data) return '';
-            if (data.type === 'completion' && data.text) {
-                return data.text;
-            }
-            if (data.type === 'assistant' && data.message) {
-                const blocks = data.message.content || [];
-                let text = '';
-                for (const block of blocks) {
-                    if (block.type === 'text') {
-                        text += block.text;
-                    }
-                }
-                return text;
-            }
-            return '';
-        }
-
-        function addToInbox(agentId, content, interruptType) {
-            const agent = state.agents[agentId];
-            if (!agent) return;
-            
-            state.inbox.unshift({
-                id: Date.now().toString(),
-                agentId,
-                project: agent.project,
-                content,
-                type: interruptType || 'message',
-                time: new Date(),
-            });
-            
-            // Keep only last 50
-            if (state.inbox.length > 50) {
-                state.inbox = state.inbox.slice(0, 50);
-            }
-        }
-
-        // ============ RENDERING ============
-        function renderAll() {
-            renderInbox();
-            renderWorking();
-            if (state.currentAgent) {
-                renderConversation();
-            }
-        }
-
-        function renderInbox() {
-            const container = document.getElementById('inbox-list');
-            
-            if (state.inbox.length === 0) {
-                const hasAgents = Object.keys(state.agents).length > 0;
-                const message = hasAgents 
-                    ? 'Agents are working. You\'ll be notified when they need you.'
-                    : 'Add a project to get started';
-                container.innerHTML = `
-                    <div class="inbox-empty">
-                        <h2>All clear</h2>
-                        <p>${message}</p>
-                    </div>
-                `;
-                return;
-            }
-            
-            container.innerHTML = state.inbox.map(item => {
-                const statusClass = getStatusClass(item.type);
-                const timeAgo = formatTimeAgo(item.time);
-                const typeLabel = getTypeLabel(item.type);
-                
-                return `
-                    <div class="inbox-item" onclick="openConversation('${item.agentId}', '${item.id}')">
-                        <div class="inbox-item-header">
-                            <div class="inbox-item-project">
-                                <span class="status-indicator ${statusClass}"></span>
-                                ${escapeHtml(item.project)}
-                            </div>
-                            <span class="inbox-item-time">${timeAgo}</span>
-                        </div>
-                        <div class="inbox-item-content">${escapeHtml(item.content)}</div>
-                        <div class="inbox-item-type">${typeLabel}</div>
-                    </div>
-                `;
-            }).join('');
-        }
-
-        function renderWorking() {
-            const section = document.getElementById('working-section');
-            const container = document.getElementById('working-list');
-            
-            const workingAgents = Object.entries(state.agents)
-                .filter(([id, agent]) => agent.status === 'working');
-            
-            if (workingAgents.length === 0) {
-                section.style.display = 'none';
-                return;
-            }
-            
-            section.style.display = 'block';
-            container.innerHTML = workingAgents.map(([id, agent]) => {
-                const lastMessage = agent.messages[agent.messages.length - 1];
-                const preview = lastMessage ? lastMessage.content.slice(0, 40) : 'Starting...';
-                
-                return `
-                    <div class="working-agent" onclick="openConversation('${id}')">
-                        <span class="dot"></span>
-                        <span class="working-agent-name">${escapeHtml(agent.project)}</span>
-                        <span class="working-agent-status">${escapeHtml(preview)}</span>
-                        <button class="working-agent-close" onclick="event.stopPropagation(); closeAgent('${id}')" title="Stop agent">×</button>
-                    </div>
-                `;
-            }).join('');
-        }
-
-        function renderConversation() {
-            const agent = state.agents[state.currentAgent];
-            if (!agent) return;
-            
-            document.getElementById('conversation-project').textContent = agent.project;
-            
-            const container = document.getElementById('conversation-messages');
-            container.innerHTML = agent.messages.map(msg => `
-                <div class="message ${msg.role}">
-                    <div class="message-role">${msg.role}</div>
-                    <div class="message-content">${escapeHtml(msg.content)}</div>
-                </div>
-            `).join('');
-            
-            container.scrollTop = container.scrollHeight;
-        }
-
-        // ============ ACTIONS ============
-        function openConversation(agentId, inboxItemId) {
-            state.currentAgent = agentId;
-            
-            // Remove from inbox if specified
-            if (inboxItemId) {
-                state.inbox = state.inbox.filter(i => i.id !== inboxItemId);
-            }
-            
-            document.getElementById('inbox-view').classList.remove('active');
-            document.getElementById('conversation-view').classList.add('active');
-            
-            renderConversation();
-            document.getElementById('conversation-input').focus();
-        }
-
-        function showInbox() {
-            state.currentAgent = null;
-            document.getElementById('conversation-view').classList.remove('active');
-            document.getElementById('inbox-view').classList.add('active');
-            renderAll();
-        }
-
-        function sendConversationMessage() {
-            const input = document.getElementById('conversation-input');
-            const content = input.value.trim();
-            if (!content || !state.currentAgent) return;
-            
-            const agent = state.agents[state.currentAgent];
-            if (!agent) return;
-            
-            // Add to local messages
-            agent.messages.push({
-                role: 'user',
-                content: content,
-                time: new Date(),
-            });
-            
-            // Send via WebSocket
-            state.ws.send(JSON.stringify({
-                agent_id: state.currentAgent,
-                content: content,
-            }));
-            
-            input.value = '';
-            
-            // Auto-return to inbox
-            setTimeout(() => {
-                showInbox();
-            }, 100);
-        }
-
-        function handleConversationKeypress(event) {
-            if (event.key === 'Enter') {
-                sendConversationMessage();
-            }
-        }
-
-        // ============ PROJECT MODAL ============
-        async function openProjectModal() {
-            const res = await fetch('/projects');
-            const data = await res.json();
-            
-            const container = document.getElementById('project-list');
-            const runningProjects = new Set(
-                Object.values(state.agents).map(a => a.project)
-            );
-            
-            container.innerHTML = data.projects.map(p => {
-                const isRunning = runningProjects.has(p);
-                return `
-                    <div class="project-option ${isRunning ? 'running' : ''}" onclick="selectProject('${p}')">
-                        <span class="project-option-name">${escapeHtml(p)}</span>
-                        <span class="project-option-status">${isRunning ? 'Running' : 'Click to start'}</span>
-                    </div>
-                `;
-            }).join('');
-            
-            document.getElementById('project-modal').classList.add('active');
-        }
-
-        function closeProjectModal() {
-            document.getElementById('project-modal').classList.remove('active');
-        }
-
-        async function closeAgent(agentId) {
-            await fetch(`/agents/${agentId}`, { method: 'DELETE' });
-        }
-
-        async function closeCurrentAgent() {
-            if (state.currentAgent) {
-                await closeAgent(state.currentAgent);
-                showInbox();
-            }
-        }
-
-        async function selectProject(project) {
-            // Check if already running
-            const existing = Object.entries(state.agents).find(([id, a]) => a.project === project);
-            if (existing) {
-                closeProjectModal();
-                openConversation(existing[0]);
-                return;
-            }
-            
-            const mode = document.getElementById('mode-select').value;
-            
-            const res = await fetch('/agents', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ project, mode }),
-            });
-            
-            const data = await res.json();
-            
-            if (data.agent_id) {
-                state.agents[data.agent_id] = {
-                    project: data.project,
-                    status: 'working',
-                    messages: [],
-                    mode: mode,
-                };
-                renderAll();
-            }
-            
-            closeProjectModal();
-        }
-
-        // ============ UTILITIES ============
-        function getStatusClass(type) {
-            switch (type) {
-                case 'question': return 'status-question';
-                case 'approval': return 'status-approval';
-                case 'complete': return 'status-complete';
-                case 'status': return 'status-info';
-                default: return 'status-working';
-            }
-        }
-
-        function getTypeLabel(type) {
-            switch (type) {
-                case 'question': return 'Needs your input';
-                case 'approval': return 'Approval required';
-                case 'plan': return 'Plan ready for review';
-                case 'complete': return 'Task completed';
-                case 'status': return 'Project status';
-                default: return 'Message';
-            }
-        }
-
-        function formatTimeAgo(date) {
-            const seconds = Math.floor((new Date() - new Date(date)) / 1000);
-            if (seconds < 60) return 'just now';
-            const minutes = Math.floor(seconds / 60);
-            if (minutes < 60) return `${minutes}m ago`;
-            const hours = Math.floor(minutes / 60);
-            if (hours < 24) return `${hours}h ago`;
-            return `${Math.floor(hours / 24)}d ago`;
-        }
-
-        function escapeHtml(text) {
-            if (!text) return '';
-            const div = document.createElement('div');
-            div.textContent = text;
-            return div.innerHTML;
-        }
-
-        // ============ INIT ============
-        connectWebSocket();
-    </script>
+    <script src="/static/app.js"></script>
 </body>
+
 </html>

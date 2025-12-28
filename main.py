@@ -124,8 +124,14 @@ async def run_claude(
                             interrupt_type = "plan"
                         elif tool_name in ("Edit", "Write", "Bash", "NotebookEdit"):
                             # These might need approval in normal mode
-                            is_interrupt = True
-                            interrupt_type = "approval"
+                            if is_initial:
+                                # Auto-approve initial exploration per user request
+                                if process.stdin:
+                                    process.stdin.write(b"y\n")
+                                    await process.stdin.drain()
+                            else:
+                                is_interrupt = True
+                                interrupt_type = "approval"
 
             if is_interrupt:
                 has_interrupt = True
@@ -215,8 +221,12 @@ async def create_agent(data: dict):
     }
 
     initial_prompt = (
-        "Give me a one-line repo status. Format: 'branch: status. Recent: brief summary of last 2-3 commits'. "
-        "No markdown, no tables, no headers. Be terse. Then wait."
+        "Generate an Executive Summary of the project status based on recent git history and code state.\n\n"
+        "REPORT FORMAT:\n"
+        "1. RECENT ACHIEVEMENTS: Summarize the last few commits and key changes. Focus on 'what' and 'why'.\n"
+        "2. SUGGESTED ROADMAP: List the top 3 high-impact TODOs.\n\n"
+        "Style: Professional, concise, and direct. No markdown, use plain text with clear spacing. "
+        "Then wait for further instructions."
     )
     asyncio.create_task(
         run_claude(agent_id, initial_prompt, project_path, mode=mode, is_initial=True)
