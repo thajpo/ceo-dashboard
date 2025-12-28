@@ -560,16 +560,30 @@ function renderInputArea() {
 
     const inputContainer = document.querySelector('.conversation-input');
     const needsInput = agent.status === 'needs_attention';
+    const isPlanReady = agent.pendingInteraction === 'plan';
+    const isApproval = agent.pendingInteraction === 'approval';
 
-    inputContainer.innerHTML = `
-        <div style="max-width:800px; margin:0 auto;">
-            ${needsInput ? `
+    let actionButtons = '';
+    if (isPlanReady) {
+        actionButtons = `
+            <div style="display:flex; gap:8px; margin-bottom:12px;">
+                <button class="btn btn-approve" onclick="executePlan()">Execute Plan</button>
+                <button class="btn btn-secondary" onclick="sendConversationMessage('Revise the plan')">Revise</button>
+            </div>
+        `;
+    } else if (needsInput) {
+        actionButtons = `
             <div style="display:flex; gap:8px; margin-bottom:12px;">
                 <button class="btn btn-approve" onclick="sendConversationMessage('y')">Yes</button>
                 <button class="btn btn-approve" style="background:var(--accent);" onclick="sendConversationMessage('yes, and continue without asking')">Yes Always</button>
                 <button class="btn btn-reject" onclick="sendConversationMessage('n')">No</button>
             </div>
-            ` : ''}
+        `;
+    }
+
+    inputContainer.innerHTML = `
+        <div style="max-width:800px; margin:0 auto;">
+            ${actionButtons}
             <div class="input-wrapper">
                 <input type="text" id="conversation-input" placeholder="${needsInput ? 'Or type a response...' : 'Give instructions...'}" onkeypress="handleConversationKeypress(event)">
                 <button class="btn btn-primary" onclick="sendConversationMessage()">Send</button>
@@ -669,6 +683,19 @@ function handleConversationKeypress(event) {
     if (event.key === 'Enter') {
         sendConversationMessage();
     }
+}
+
+async function executePlan() {
+    if (!state.currentAgent) return;
+    const agent = state.agents[state.currentAgent];
+    if (!agent) return;
+
+    agent.pendingInteraction = null;
+    agent.mode = 'normal';
+
+    await fetch(`/agents/${state.currentAgent}/execute`, { method: 'POST' });
+
+    renderInputArea();
 }
 
 // ============ PROJECT MODAL ============

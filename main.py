@@ -1,17 +1,21 @@
 import asyncio
 import json
+import os
 import subprocess
 import uuid
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 app = FastAPI()
 
-PROJECTS_DIR = Path.home() / "Projects"
+# Default to ~/Projects/Claudes, override with CEO_PROJECTS_DIR env var
+PROJECTS_DIR = Path(
+    os.environ.get("CEO_PROJECTS_DIR", Path.home() / "Projects" / "Claudes")
+)
 
 # Agent state: agent_id -> {project, session_id, status, process}
 agents: dict[str, dict[str, Any]] = {}
@@ -38,7 +42,6 @@ async def run_claude(
     project_path: Path,
     session_id: str | None = None,
     mode: str = "normal",
-    is_initial: bool = False,
 ):
     """Run claude CLI and stream output."""
     agent = agents.get(agent_id)
@@ -142,16 +145,13 @@ async def run_claude(
                         elif tool_name == "ExitPlanMode":
                             is_interrupt = True
                             interrupt_type = "plan"
-                        elif tool_name in ("Edit", "Write", "Bash", "NotebookEdit"):
-                            # These might need approval in normal mode
-                            if is_initial:
-                                # Auto-approve initial exploration per user request
-                                if process.stdin:
-                                    process.stdin.write(b"y\n")
-                                    await process.stdin.drain()
-                            else:
-                                is_interrupt = True
-                                interrupt_type = "approval"
+                        elif tool_name in ("Edit", "Write", "NotebookEdit"):
+                            if process.stdin:
+                                process.stdin.write(b"y\n")
+                                await process.stdin.drain()
+                        elif tool_name == "Bash":
+                            is_interrupt = True
+                            interrupt_type = "approval"
 
             if is_interrupt:
                 has_interrupt = True
@@ -196,7 +196,7 @@ async def run_claude(
             {
                 "agent_id": agent_id,
                 "type": "interrupt",
-                "interrupt_type": "status" if is_initial else "complete",
+                "interrupt_type": "complete",
                 "content": {"type": "completion", "text": accumulated_text},
             }
         )
@@ -223,11 +223,11 @@ async def create_agent(data: dict):
     """Create a new agent for a project."""
     project = data.get("project")
     if not project:
-        return {"error": "project required"}, 400
+        raise HTTPException(status_code=400, detail="project required")
 
     project_path = PROJECTS_DIR / project
     if not project_path.exists():
-        return {"error": "project not found"}, 404
+        raise HTTPException(status_code=404, detail="project not found")
 
     mode = data.get("mode", "normal")
     agent_id = str(uuid.uuid4())[:8]
@@ -241,16 +241,18 @@ async def create_agent(data: dict):
     }
 
     initial_prompt = (
-        "Generate an Executive Summary of the project status based on recent git history and code state.\n\n"
+        "Generate an Executive Summary of this project.\n\n"
+        "First, run these git commands:\n"
+        "- git log --oneline -10\n"
+        "- git status\n"
+        "- git diff --stat (if uncommitted changes exist)\n\n"
         "REPORT FORMAT:\n"
-        "1. RECENT ACHIEVEMENTS: Summarize the last few commits and key changes. Focus on 'what' and 'why'.\n"
-        "2. SUGGESTED ROADMAP: List the top 3 high-impact TODOs.\n\n"
-        "Style: Professional, concise, and direct. No markdown, use plain text with clear spacing. "
-        "Then wait for further instructions."
+        "1. RECENT COMMITS: Summarize what was done in the last few commits\n"
+        "2. CURRENT STATE: Branch name, uncommitted changes, any issues\n"
+        "3. NEXT STEPS: Top 3 suggested priorities based on the code\n\n"
+        "Be concise. Then wait for instructions."
     )
-    asyncio.create_task(
-        run_claude(agent_id, initial_prompt, project_path, mode=mode, is_initial=True)
-    )
+    asyncio.create_task(run_claude(agent_id, initial_prompt, project_path, mode=mode))
 
     return {"agent_id": agent_id, "project": project, "mode": mode}
 
@@ -260,7 +262,7 @@ async def delete_agent(agent_id: str):
     """Delete an agent."""
     agent = agents.pop(agent_id, None)
     if not agent:
-        return {"error": "agent not found"}, 404
+        raise HTTPException(status_code=404, detail="agent not found")
 
     # Kill process if running
     if agent.get("process"):
@@ -270,12 +272,42 @@ async def delete_agent(agent_id: str):
     return {"ok": True}
 
 
+@app.post("/agents/{agent_id}/execute")
+async def execute_plan(agent_id: str):
+    """Switch agent from plan mode to execution mode."""
+    agent = agents.get(agent_id)
+    if not agent:
+        raise HTTPException(status_code=404, detail="agent not found")
+
+    session_id = agent.get("session_id")
+    if not session_id:
+        raise HTTPException(status_code=400, detail="no session to resume")
+
+    if agent.get("process"):
+        agent["process"].terminate()
+        await agent["process"].wait()
+
+    agent["mode"] = "normal"
+
+    asyncio.create_task(
+        run_claude(
+            agent_id,
+            "Execute the plan.",
+            agent["project_path"],
+            session_id=session_id,
+            mode="normal",
+        )
+    )
+
+    return {"ok": True}
+
+
 @app.get("/agents/{agent_id}/diff")
 async def get_agent_diff(agent_id: str):
     """Get git diff for an agent's project."""
     agent = agents.get(agent_id)
     if not agent:
-        return {"error": "agent not found"}, 404
+        raise HTTPException(status_code=404, detail="agent not found")
 
     project_path = agent["project_path"]
     try:
@@ -308,9 +340,9 @@ async def get_agent_diff(agent_id: str):
 
         return {"stat": stat, "diff": diff, "status": status}
     except subprocess.TimeoutExpired:
-        return {"error": "timeout"}, 500
+        raise HTTPException(status_code=500, detail="timeout")
     except Exception as e:
-        return {"error": str(e)}, 500
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.websocket("/ws")
@@ -319,7 +351,6 @@ async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
     clients.append(websocket)
 
-    # Send current agent states
     for agent_id, agent in agents.items():
         await websocket.send_json(
             {
@@ -327,6 +358,7 @@ async def websocket_endpoint(websocket: WebSocket):
                 "type": "init",
                 "project": agent["project"],
                 "status": agent["status"],
+                "mode": agent.get("mode", "normal"),
             }
         )
 
