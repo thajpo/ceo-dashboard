@@ -128,8 +128,12 @@ def extract_command_prefix(tool_name: str, tool_input: dict) -> str:
         # Extract first word of command
         first_word = command.split()[0] if command.split() else ""
         # Handle paths like ./script.sh or /usr/bin/python
-        if first_word.startswith("./") or first_word.startswith("/"):
-            return f"Bash:{first_word.split('/')[0] or './'}"
+        if first_word.startswith("./"):
+            return "Bash:./"
+        if first_word.startswith("/"):
+            # Extract actual command name from path like /usr/bin/python -> python
+            cmd_name = first_word.split("/")[-1]
+            return f"Bash:{cmd_name}" if cmd_name else "Bash:/"
         return f"Bash:{first_word}"
     else:
         return tool_name
@@ -240,6 +244,7 @@ async def run_claude(
         return
 
     agent["status"] = "working"
+    agent["waiting_on_user"] = False  # Agent is now working
     await broadcast({"agent_id": agent_id, "type": "status", "status": "working"})
 
     # Build base command - use stream-json input to avoid stdin blocking issues
@@ -309,6 +314,8 @@ async def run_claude(
                     "content": [{"type": "text", "text": prompt}]
                 }
             })
+            # Store user message for persistence
+            agent["messages"].append({"role": "user", "content": prompt})
             print(f"[Agent {agent_id}] Sending prompt via stdin", file=sys.stderr)
             process.stdin.write((prompt_msg + "\n").encode())
             await process.stdin.drain()
@@ -362,6 +369,9 @@ async def run_claude(
 
                         if block_type == "text":
                             text = block.get("text", "")
+                            # Store assistant text for persistence
+                            if text:
+                                agent["messages"].append({"role": "assistant", "content": text})
                             # Check for questions
                             if "?" in text and any(
                                 q in text.lower()
@@ -405,6 +415,7 @@ async def run_claude(
 
                 if is_interrupt:
                     agent["status"] = "needs_attention"
+                    agent["waiting_on_user"] = True  # Needs user input
                     await broadcast(
                         {
                             "agent_id": agent_id,
@@ -443,6 +454,7 @@ async def run_claude(
         # Cleanup
         agent["process"] = None
         agent["status"] = "idle"
+        agent["waiting_on_user"] = True  # Agent finished turn, waiting for user
 
         # Remove temp MCP config file
         if mcp_config_path and os.path.exists(mcp_config_path):
@@ -492,6 +504,8 @@ async def create_agent(data: dict):
         "status": "idle",
         "process": None,
         "mode": mode,
+        "messages": [],  # Store message history for persistence
+        "waiting_on_user": False,  # True when agent finished turn, waiting for user
     }
 
     # Initialize empty auto-approve patterns for this agent
@@ -726,6 +740,8 @@ async def websocket_endpoint(websocket: WebSocket):
                 "project": agent["project"],
                 "status": agent["status"],
                 "mode": agent.get("mode", "normal"),
+                "messages": agent.get("messages", []),
+                "waiting_on_user": agent.get("waiting_on_user", False),
             }
         )
 
@@ -747,9 +763,8 @@ async def websocket_endpoint(websocket: WebSocket):
 
                 # Store pattern if provided (for "Yes to all X")
                 if pattern and agent_id and decision == "allow":
-                    if agent_id not in auto_approve_patterns:
-                        auto_approve_patterns[agent_id] = set()
-                    auto_approve_patterns[agent_id].add(pattern)
+                    # Use setdefault for atomic get-or-create
+                    auto_approve_patterns.setdefault(agent_id, set()).add(pattern)
                     print(
                         f"[WebSocket] Added auto-approve pattern: {pattern}",
                         file=sys.stderr,
@@ -812,6 +827,9 @@ async def websocket_endpoint(websocket: WebSocket):
                                 "content": [{"type": "text", "text": content}]
                             }
                         })
+                        # Store user message for persistence
+                        agent["messages"].append({"role": "user", "content": content})
+                        agent["waiting_on_user"] = False  # User responded
                         process.stdin.write((user_msg + "\n").encode())
                         await process.stdin.drain()
                         agent["status"] = "working"

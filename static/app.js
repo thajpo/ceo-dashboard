@@ -13,7 +13,7 @@ const state = {
     diffData: null,
     selectedFile: null,
     ws: null,
-    pendingApproval: null,
+    approvalQueue: [],  // Queue of pending approvals to prevent overwrites
     yoloConfirmed: false,
 };
 
@@ -46,16 +46,28 @@ function handleMessage(msg) {
 
     if (msg.type === 'init') {
         if (!state.agents[agentId]) {
+            // Restore messages from server (convert to frontend format with time)
+            const messages = (msg.messages || []).map(m => ({
+                role: m.role,
+                content: m.content,
+                time: new Date(),
+            }));
             state.agents[agentId] = {
                 project: msg.project,
                 status: msg.status,
-                messages: [],
+                messages: messages,
                 tools: [],
                 todos: [],
                 mode: msg.mode || 'normal',
                 lastUpdate: new Date(),
                 pendingInteraction: null, // 'approval', 'question', or null
             };
+            // Add to inbox only if agent is waiting on user
+            if (msg.waiting_on_user) {
+                const lastMsg = messages[messages.length - 1];
+                const content = lastMsg ? lastMsg.content.substring(0, 100) : 'Agent ready';
+                addToInbox(agentId, content, msg.status === 'needs_attention' ? 'question' : 'completed');
+            }
         }
         renderAll();
         return;
@@ -76,12 +88,17 @@ function handleMessage(msg) {
     // Status Update
     if (msg.type === 'status') {
         if (state.agents[agentId]) {
-            state.agents[agentId].status = msg.status;
-            state.agents[agentId].lastUpdate = new Date();
+            const agent = state.agents[agentId];
+            agent.status = msg.status;
+            agent.lastUpdate = new Date();
 
-            // If status is idle, clear pending interaction
+            // If status is idle, clear pending interaction and add to inbox
             if (msg.status === 'idle') {
-                state.agents[agentId].pendingInteraction = null;
+                agent.pendingInteraction = null;
+                // Add to inbox when agent finishes its turn
+                const lastMsg = agent.messages[agent.messages.length - 1];
+                const content = lastMsg ? lastMsg.content.substring(0, 100) : 'Task completed';
+                addToInbox(agentId, content, 'completed');
             }
         }
         renderSidebar(); // Status dot update
@@ -218,11 +235,8 @@ function addToInbox(agentId, content, interruptType) {
     const agent = state.agents[agentId];
     if (!agent) return;
 
-    const lastItem = state.inbox[0];
-    if (lastItem && lastItem.agentId === agentId &&
-        (new Date() - lastItem.time) < 2000) {
-        return;
-    }
+    // Remove any existing inbox entry for this agent (one agent = one entry max)
+    state.inbox = state.inbox.filter(item => item.agentId !== agentId);
 
     state.inbox.unshift({
         id: Date.now().toString(),
@@ -269,7 +283,7 @@ function renderSidebar() {
         const isHighUsage = total > 150000;
 
         return `
-            <div class="sidebar-agent ${isActive ? 'active' : ''}" onclick="openConversation('${id}')">
+            <div class="sidebar-agent ${isActive ? 'active' : ''}" onclick="openConversation('${escapeAttr(id)}')">
                 <span class="sidebar-agent-dot ${agent.status}"></span>
                 <div class="sidebar-agent-info">
                     <div class="sidebar-agent-name">${escapeHtml(agent.project)}</div>
@@ -467,7 +481,7 @@ function renderDiffFileList(files) {
 
     container.innerHTML = files.map(file => `
         <div class="diff-file-item ${file.name === state.selectedFile ? 'active' : ''}" 
-             onclick="selectDiffFile('${escapeHtml(file.name)}')">
+             onclick="selectDiffFile('${escapeAttr(file.name)}')">
             <div style="font-weight:500;">${escapeHtml(file.name.split('/').pop())}</div>
             <div style="font-size:11px; margin-top:2px;">
                 <span style="color:var(--success)">+${file.additions}</span>
@@ -526,7 +540,7 @@ function renderInbox() {
         const statusColor = getStatusColor(item.type);
 
         return `
-            <div class="inbox-item" onclick="openConversation('${item.agentId}', '${item.id}')" style="border-left: 3px solid ${statusColor}">
+            <div class="inbox-item" onclick="openConversation('${escapeAttr(item.agentId)}', '${escapeAttr(item.id)}')" style="border-left: 3px solid ${statusColor}">
                 <div class="inbox-item-header">
                     <div class="inbox-item-project">
                         <span style="width:8px; height:8px; border-radius:50%; background:${statusColor}; display:inline-block;"></span>
@@ -567,7 +581,7 @@ function renderConversationMessages() {
     container.innerHTML = agent.messages.map(msg => `
         <div class="message ${msg.role}">
             <div class="message-role">${msg.role}</div>
-            <div class="message-content markdown-body">${marked.parse(msg.content)}</div>
+            <div class="message-content markdown-body">${DOMPurify.sanitize(marked.parse(msg.content))}</div>
         </div>
     `).join('');
 
@@ -700,9 +714,9 @@ function sendConversationMessage(textOverride) {
     if (document.getElementById('conversation-input')) {
         document.getElementById('conversation-input').value = '';
     }
-    
-    renderConversationMessages();
-    renderInputArea();
+
+    // Return to inbox after addressing an item
+    showInbox();
 }
 
 function handleConversationKeypress(event) {
@@ -737,7 +751,7 @@ async function openProjectModal() {
     container.innerHTML = data.projects.map(p => {
         const isRunning = runningProjects.has(p);
         return `
-            <div class="project-option ${isRunning ? 'running' : ''}" onclick="selectProject('${p}')">
+            <div class="project-option ${isRunning ? 'running' : ''}" onclick="selectProject('${escapeAttr(p)}')">
                 <span class="project-option-name" style="font-weight:500">${escapeHtml(p)}</span>
                 <span class="project-option-status" style="font-size:12px">${isRunning ? 'Running' : 'Click to start'}</span>
             </div>
@@ -859,6 +873,16 @@ function escapeHtml(text) {
     return div.innerHTML;
 }
 
+function escapeAttr(text) {
+    if (!text) return '';
+    return text
+        .replace(/&/g, '&amp;')
+        .replace(/'/g, '&#39;')
+        .replace(/"/g, '&quot;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+}
+
 // ============ MODE HANDLING ============
 const MODE_DESCRIPTIONS = {
     'plan': 'Claude analyzes but makes no changes. Best for reviewing plans.',
@@ -910,62 +934,80 @@ function cancelYoloMode() {
 
 // ============ APPROVAL MODAL ============
 function showApprovalModal(data) {
-    state.pendingApproval = {
+    const approval = {
         request_id: data.request_id,
         agent_id: data.agent_id,
         tool_name: data.tool_name,
         tool_input: data.tool_input,
         pattern: data.pattern,
         cwd: data.cwd,
+        command_display: data.command_display,
     };
-    
-    document.getElementById('approval-tool').textContent = data.tool_name;
-    document.getElementById('approval-command').textContent = data.command_display || JSON.stringify(data.tool_input, null, 2);
-    document.getElementById('approval-cwd').textContent = data.cwd;
-    document.getElementById('approval-pattern').textContent = data.pattern;
-    
-    const title = data.tool_name === 'Bash' ? 'Shell Command Approval' : 'File Edit Approval';
+
+    // Queue the approval request
+    state.approvalQueue.push(approval);
+
+    // If this is the only one, show the modal
+    if (state.approvalQueue.length === 1) {
+        displayApprovalModal(approval);
+    }
+}
+
+function displayApprovalModal(approval) {
+    document.getElementById('approval-tool').textContent = approval.tool_name;
+    document.getElementById('approval-command').textContent = approval.command_display || JSON.stringify(approval.tool_input, null, 2);
+    document.getElementById('approval-cwd').textContent = approval.cwd;
+    document.getElementById('approval-pattern').textContent = approval.pattern;
+
+    const title = approval.tool_name === 'Bash' ? 'Shell Command Approval' : 'File Edit Approval';
     document.getElementById('approval-title').textContent = title;
-    
+
     document.getElementById('approval-modal').classList.add('active');
 }
 
+function getCurrentApproval() {
+    return state.approvalQueue[0] || null;
+}
+
 function sendApproval(decision) {
-    if (!state.pendingApproval) return;
-    
+    const approval = getCurrentApproval();
+    if (!approval) return;
+
     state.ws.send(JSON.stringify({
         type: 'approval_response',
-        request_id: state.pendingApproval.request_id,
-        agent_id: state.pendingApproval.agent_id,
+        request_id: approval.request_id,
+        agent_id: approval.agent_id,
         decision: decision,
-        tool_input: state.pendingApproval.tool_input,
+        tool_input: approval.tool_input,
     }));
-    
+
     closeApprovalModal();
 }
 
 function sendApprovalWithPattern() {
-    if (!state.pendingApproval) return;
-    
+    const approval = getCurrentApproval();
+    if (!approval) return;
+
     state.ws.send(JSON.stringify({
         type: 'approval_response',
-        request_id: state.pendingApproval.request_id,
-        agent_id: state.pendingApproval.agent_id,
+        request_id: approval.request_id,
+        agent_id: approval.agent_id,
         decision: 'allow',
-        pattern: state.pendingApproval.pattern,
-        tool_input: state.pendingApproval.tool_input,
+        pattern: approval.pattern,
+        tool_input: approval.tool_input,
     }));
-    
+
     closeApprovalModal();
 }
 
 function stopAgentFromApproval() {
-    if (!state.pendingApproval) return;
-    
-    const agentId = state.pendingApproval.agent_id;
-    
+    const approval = getCurrentApproval();
+    if (!approval) return;
+
+    const agentId = approval.agent_id;
+
     sendApproval('deny');
-    
+
     state.ws.send(JSON.stringify({
         type: 'stop_agent',
         agent_id: agentId,
@@ -973,8 +1015,15 @@ function stopAgentFromApproval() {
 }
 
 function closeApprovalModal() {
-    state.pendingApproval = null;
-    document.getElementById('approval-modal').classList.remove('active');
+    // Remove the current approval from queue
+    state.approvalQueue.shift();
+
+    // If there are more in queue, show the next one
+    if (state.approvalQueue.length > 0) {
+        displayApprovalModal(state.approvalQueue[0]);
+    } else {
+        document.getElementById('approval-modal').classList.remove('active');
+    }
 }
 
 // ============ INIT ============
