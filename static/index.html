@@ -131,6 +131,23 @@
                 <div id="mode-description" style="font-size:12px; color:var(--text-muted); margin-top:8px; padding:8px; background:rgba(0,0,0,0.2); border-radius:6px;">
                     Claude analyzes but makes no changes. Best for reviewing plans.
                 </div>
+
+                <div style="margin-top:16px; padding-top:16px; border-top:1px solid var(--border);">
+                    <label style="display:flex; align-items:center; justify-content:space-between; cursor:pointer;">
+                        <div>
+                            <div style="font-size:12px; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.05em;">Sandbox Mode</div>
+                            <div id="sandbox-description" style="font-size:11px; color:var(--text-muted); margin-top:4px;">Select a project first</div>
+                        </div>
+                        <div class="toggle-switch">
+                            <input type="checkbox" id="sandbox-toggle" onchange="handleSandboxChange()" disabled>
+                            <span class="toggle-slider"></span>
+                        </div>
+                    </label>
+                </div>
+
+                <button id="start-agent-btn" class="btn btn-primary" style="width:100%; margin-top:16px;" onclick="startSelectedProject()" disabled>
+                    Start Agent
+                </button>
             </div>
         </div>
     </div>

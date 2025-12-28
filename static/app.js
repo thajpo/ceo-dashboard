@@ -15,6 +15,8 @@ const state = {
     ws: null,
     approvalQueue: [],  // Queue of pending approvals to prevent overwrites
     yoloConfirmed: false,
+    selectedProject: null,  // Currently selected project in modal
+    selectedProjectSandbox: { enabled: false, autoAllowBashIfSandboxed: false },
 };
 
 // ============ WEBSOCKET ============
@@ -747,18 +749,106 @@ async function openProjectModal() {
     container.innerHTML = data.projects.map(p => {
         const isRunning = runningProjects.has(p);
         return `
-            <div class="project-option ${isRunning ? 'running' : ''}" onclick="selectProject('${escapeAttr(p)}')">
+            <div class="project-option ${isRunning ? 'running' : ''}" onclick="selectProjectForConfig('${escapeAttr(p)}')">
                 <span class="project-option-name" style="font-weight:500">${escapeHtml(p)}</span>
-                <span class="project-option-status" style="font-size:12px">${isRunning ? 'Running' : 'Click to start'}</span>
+                <span class="project-option-status" style="font-size:12px">${isRunning ? 'Running' : 'Click to select'}</span>
             </div>
         `;
     }).join('');
+
+    // Reset sandbox toggle state
+    state.selectedProject = null;
+    state.selectedProjectSandbox = { enabled: false, autoAllowBashIfSandboxed: false };
+    document.getElementById('sandbox-toggle').checked = false;
+    document.getElementById('sandbox-toggle').disabled = true;
+    document.getElementById('sandbox-description').textContent = 'Select a project first';
+    document.getElementById('start-agent-btn').disabled = true;
 
     document.getElementById('project-modal').classList.add('active');
 }
 
 function closeProjectModal() {
     document.getElementById('project-modal').classList.remove('active');
+}
+
+async function selectProjectForConfig(project) {
+    // If already running, just open the conversation
+    const existing = Object.entries(state.agents).find(([id, a]) => a.project === project);
+    if (existing) {
+        closeProjectModal();
+        openConversation(existing[0]);
+        return;
+    }
+
+    // Highlight selected project
+    document.querySelectorAll('.project-option').forEach(el => {
+        el.classList.remove('selected');
+    });
+    event.currentTarget.classList.add('selected');
+
+    state.selectedProject = project;
+
+    // Enable start button
+    document.getElementById('start-agent-btn').disabled = false;
+
+    // Load sandbox settings
+    const toggle = document.getElementById('sandbox-toggle');
+    const desc = document.getElementById('sandbox-description');
+
+    toggle.disabled = true;
+    desc.textContent = 'Loading...';
+
+    try {
+        const res = await fetch(`/projects/${encodeURIComponent(project)}/sandbox`);
+        const data = await res.json();
+        state.selectedProjectSandbox = data;
+        toggle.checked = data.enabled;
+        toggle.disabled = false;
+        desc.textContent = data.enabled
+            ? 'Filesystem/network isolated, bash auto-approved'
+            : 'No isolation, normal permission checks';
+    } catch (e) {
+        desc.textContent = 'Failed to load settings';
+        toggle.disabled = true;
+    }
+}
+
+async function handleSandboxChange() {
+    if (!state.selectedProject) return;
+
+    const toggle = document.getElementById('sandbox-toggle');
+    const desc = document.getElementById('sandbox-description');
+    const enabled = toggle.checked;
+
+    toggle.disabled = true;
+    desc.textContent = 'Saving...';
+
+    try {
+        const res = await fetch(`/projects/${encodeURIComponent(state.selectedProject)}/sandbox`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                enabled: enabled,
+                autoAllowBashIfSandboxed: enabled,
+            }),
+        });
+
+        const data = await res.json();
+        state.selectedProjectSandbox = data;
+        toggle.disabled = false;
+        desc.textContent = data.enabled
+            ? 'Filesystem/network isolated, bash auto-approved'
+            : 'No isolation, normal permission checks';
+    } catch (e) {
+        toggle.checked = !enabled;
+        toggle.disabled = false;
+        desc.textContent = 'Failed to save';
+    }
+}
+
+function startSelectedProject() {
+    if (!state.selectedProject) return;
+    selectProject(state.selectedProject);
 }
 
 async function closeAgent(agentId) {

@@ -417,6 +417,12 @@ async def run_claude(
                     if accumulated_text:
                         agent["messages"].append({"role": "assistant", "content": accumulated_text})
 
+                # Result message = Claude finished turn, waiting for user input
+                elif msg_type == "result":
+                    if not is_interrupt:
+                        is_interrupt = True
+                        interrupt_type = "ready"
+
                 if is_interrupt:
                     agent["status"] = "needs_attention"
                     agent["waiting_on_user"] = True  # Needs user input
@@ -489,6 +495,66 @@ async def list_projects():
         if d.is_dir() and not d.name.startswith(".")
     ]
     return {"projects": sorted(projects)}
+
+
+@app.get("/projects/{project}/sandbox")
+async def get_project_sandbox(project: str):
+    """Get sandbox settings from project's .claude/settings.local.json."""
+    project_path = PROJECTS_DIR / project
+    if not project_path.exists():
+        raise HTTPException(status_code=404, detail="project not found")
+
+    settings_path = project_path / ".claude" / "settings.local.json"
+
+    if not settings_path.exists():
+        return {"enabled": False, "autoAllowBashIfSandboxed": False}
+
+    try:
+        with open(settings_path) as f:
+            settings = json.load(f)
+        sandbox = settings.get("sandbox", {})
+        return {
+            "enabled": sandbox.get("enabled", False),
+            "autoAllowBashIfSandboxed": sandbox.get("autoAllowBashIfSandboxed", False),
+        }
+    except (json.JSONDecodeError, IOError):
+        return {"enabled": False, "autoAllowBashIfSandboxed": False}
+
+
+@app.put("/projects/{project}/sandbox")
+async def set_project_sandbox(project: str, data: dict):
+    """Set sandbox settings in project's .claude/settings.local.json."""
+    project_path = PROJECTS_DIR / project
+    if not project_path.exists():
+        raise HTTPException(status_code=404, detail="project not found")
+
+    claude_dir = project_path / ".claude"
+    settings_path = claude_dir / "settings.local.json"
+
+    # Create .claude directory if needed
+    claude_dir.mkdir(exist_ok=True)
+
+    # Read existing settings or start fresh
+    if settings_path.exists():
+        try:
+            with open(settings_path) as f:
+                settings = json.load(f)
+        except (json.JSONDecodeError, IOError):
+            settings = {}
+    else:
+        settings = {}
+
+    # Update sandbox section
+    settings["sandbox"] = {
+        "enabled": data.get("enabled", False),
+        "autoAllowBashIfSandboxed": data.get("autoAllowBashIfSandboxed", False),
+    }
+
+    # Write back
+    with open(settings_path, "w") as f:
+        json.dump(settings, f, indent=2)
+
+    return settings["sandbox"]
 
 
 @app.post("/agents")
