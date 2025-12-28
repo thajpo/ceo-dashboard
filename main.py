@@ -12,10 +12,8 @@ from fastapi.staticfiles import StaticFiles
 
 app = FastAPI()
 
-# Default to ~/Projects/Claudes, override with CEO_PROJECTS_DIR env var
-PROJECTS_DIR = Path(
-    os.environ.get("CEO_PROJECTS_DIR", Path.home() / "Projects" / "Claudes")
-)
+# Default to ~/Projects, override with CEO_PROJECTS_DIR env var
+PROJECTS_DIR = Path(os.environ.get("CEO_PROJECTS_DIR", Path.home() / "Projects"))
 
 # Agent state: agent_id -> {project, session_id, status, process}
 agents: dict[str, dict[str, Any]] = {}
