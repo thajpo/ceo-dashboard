@@ -1,6 +1,6 @@
 import asyncio
 import json
-import os
+import subprocess
 import uuid
 from pathlib import Path
 from typing import Any
@@ -61,6 +61,7 @@ async def run_claude(
 
     process = await asyncio.create_subprocess_exec(
         *cmd,
+        stdin=asyncio.subprocess.PIPE,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.STDOUT,
         cwd=project_path,
@@ -81,6 +82,12 @@ async def run_claude(
         try:
             data = json.loads(line_str)
             msg_type = data.get("type", "")
+
+            # Broadcast usage if present
+            if "usage" in data:
+                await broadcast(
+                    {"agent_id": agent_id, "type": "usage", "usage": data["usage"]}
+                )
 
             # Capture session_id from final result message
             if msg_type == "result" and "session_id" in data:
@@ -116,6 +123,19 @@ async def run_claude(
                     # Check for tool use that needs attention
                     if block.get("type") == "tool_use":
                         tool_name = block.get("name", "")
+
+                        # Broadcast tool usage for UI
+                        await broadcast(
+                            {
+                                "agent_id": agent_id,
+                                "type": "tool",
+                                "tool": {
+                                    "name": tool_name,
+                                    "input": block.get("input", {}),
+                                },
+                            }
+                        )
+
                         if tool_name in ("AskUserQuestion", "AskHuman"):
                             is_interrupt = True
                             interrupt_type = "question"
@@ -250,6 +270,49 @@ async def delete_agent(agent_id: str):
     return {"ok": True}
 
 
+@app.get("/agents/{agent_id}/diff")
+async def get_agent_diff(agent_id: str):
+    """Get git diff for an agent's project."""
+    agent = agents.get(agent_id)
+    if not agent:
+        return {"error": "agent not found"}, 404
+
+    project_path = agent["project_path"]
+    try:
+        result = subprocess.run(
+            ["git", "diff", "--stat"],
+            cwd=project_path,
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        stat = result.stdout
+
+        result = subprocess.run(
+            ["git", "diff"],
+            cwd=project_path,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        diff = result.stdout
+
+        result = subprocess.run(
+            ["git", "status", "--porcelain"],
+            cwd=project_path,
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        status = result.stdout
+
+        return {"stat": stat, "diff": diff, "status": status}
+    except subprocess.TimeoutExpired:
+        return {"error": "timeout"}, 500
+    except Exception as e:
+        return {"error": str(e)}, 500
+
+
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     """WebSocket for real-time agent communication."""
@@ -278,6 +341,42 @@ async def websocket_endpoint(websocket: WebSocket):
                 await websocket.send_json(
                     {"error": "agent not found", "agent_id": agent_id}
                 )
+                continue
+
+            # Handle existing process interaction (approvals/input)
+            if agent["status"] == "needs_attention":
+                if agent.get("process"):
+                    process = agent["process"]
+                    if process.stdin:
+                        # If content is "always", we might need special handling if CLI supports it.
+                        # For now, just pass it through. User sends "y", "n", or text.
+                        # Ensure newline
+                        msg = content + "\n"
+                        try:
+                            process.stdin.write(msg.encode())
+                            await process.stdin.drain()
+
+                            # Update status back to working
+                            agent["status"] = "working"
+                            await broadcast(
+                                {
+                                    "agent_id": agent_id,
+                                    "type": "status",
+                                    "status": "working",
+                                }
+                            )
+                        except Exception as e:
+                            print(f"Error writing to process: {e}")
+                            await websocket.send_json(
+                                {
+                                    "error": "failed to write to process",
+                                    "agent_id": agent_id,
+                                }
+                            )
+                else:
+                    await websocket.send_json(
+                        {"error": "process lost", "agent_id": agent_id}
+                    )
                 continue
 
             # Don't send if already processing

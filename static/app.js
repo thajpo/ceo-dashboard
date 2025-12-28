@@ -84,10 +84,34 @@ function handleMessage(msg) {
     // Tool Use
     if (msg.type === 'tool') {
         if (state.agents[agentId]) {
-            state.agents[agentId].tools.push(msg.tool);
-            if (state.currentAgent === agentId) {
-                renderInfoPanel();
+            const tools = state.agents[agentId].tools;
+            const lastTool = tools.length > 0 ? tools[tools.length - 1] : null;
+
+            // De-dupe tools (check if same as last to avoid spam)
+            const isDuplicate = lastTool &&
+                lastTool.name === msg.tool.name &&
+                JSON.stringify(lastTool.input) === JSON.stringify(msg.tool.input);
+
+            if (!isDuplicate) {
+                state.agents[agentId].tools.push(msg.tool);
+                if (state.currentAgent === agentId) {
+                    renderInfoPanel();
+                }
             }
+        }
+        return;
+    }
+
+    // Usage
+    if (msg.type === 'usage') {
+        if (state.agents[agentId]) {
+            const current = state.agents[agentId].usage || { input: 0, output: 0 };
+            // Accumulate usage
+            state.agents[agentId].usage = {
+                input: (current.input || 0) + (msg.usage.input_tokens || 0),
+                output: (current.output || 0) + (msg.usage.output_tokens || 0)
+            };
+            renderSidebar();
         }
         return;
     }
@@ -216,13 +240,22 @@ function renderSidebar() {
     container.innerHTML = agents.map(([id, agent]) => {
         const isActive = state.currentAgent === id;
         const statusLabel = agent.status === 'needs_attention' ? 'Needs input' : agent.status;
+        const usage = agent.usage || { input: 0, output: 0 };
+        const total = usage.input + usage.output;
+        const usageLabel = total > 0 ? (total / 1000).toFixed(1) + 'k' : '';
+
+        const isHighUsage = total > 150000;
 
         return `
             <div class="sidebar-agent ${isActive ? 'active' : ''}" onclick="openConversation('${id}')">
                 <span class="sidebar-agent-dot ${agent.status}"></span>
                 <div class="sidebar-agent-info">
                     <div class="sidebar-agent-name">${escapeHtml(agent.project)}</div>
-                    <div class="sidebar-agent-status">${statusLabel}</div>
+                    <div class="sidebar-agent-status">
+                        ${statusLabel}
+                        ${usageLabel ? `<span style="margin-left:6px; font-family:'JetBrains Mono'; opacity:0.7; ${isHighUsage ? 'color:var(--warning); font-weight:bold;' : ''}">${usageLabel}</span>` : ''}
+                        ${isHighUsage ? '<span title="High context usage. Consider compacting." style="margin-left:4px; cursor:help;">⚠️</span>' : ''}
+                    </div>
                 </div>
             </div>
         `;
@@ -508,9 +541,14 @@ function renderConversationMessages() {
     container.innerHTML = agent.messages.map(msg => `
         <div class="message ${msg.role}">
             <div class="message-role">${msg.role}</div>
-            <div class="message-content">${escapeHtml(msg.content)}</div>
+            <div class="message-content markdown-body">${marked.parse(msg.content)}</div>
         </div>
     `).join('');
+
+    // Highlight code blocks
+    container.querySelectorAll('pre code').forEach((block) => {
+        hljs.highlightElement(block);
+    });
 
     // Auto-scroll
     container.scrollTop = container.scrollHeight;
@@ -526,19 +564,20 @@ function renderInputArea() {
     if (agent.pendingInteraction === 'approval') {
         // Try to find the pending tool
         const lastTool = agent.tools && agent.tools.length > 0 ? agent.tools[agent.tools.length - 1] : null;
-        let commandPreview = "Action";
+        let commandPreview = "Action pending approval";
+
         if (lastTool) {
-            if (lastTool.name === 'Bash') commandPreview = `Run: ${lastTool.input.command}`;
-            else if (lastTool.name === 'Edit') commandPreview = `Edit: ${lastTool.input.path}`;
-            else if (lastTool.name === 'Write') commandPreview = `Write: ${lastTool.input.path}`;
-            else commandPreview = `${lastTool.name}`;
+            if (lastTool.name === 'Bash') commandPreview = `$> ${lastTool.input.command}`;
+            else if (lastTool.name === 'Edit') commandPreview = `Edit file: ${lastTool.input.path}`;
+            else if (lastTool.name === 'Write') commandPreview = `Write file: ${lastTool.input.path}`;
+            else commandPreview = `Use tool: ${lastTool.name}`;
         }
 
         inputContainer.innerHTML = `
             <div class="approval-bar">
-                <div class="approval-message">
-                    <span style="color:var(--accent);">⚠ Approval Required</span>
-                    <span style="font-weight:400; color:var(--text-secondary); font-family:monospace; font-size:12px; max-width: 400px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${escapeHtml(commandPreview)}</span>
+                <div class="approval-message" style="flex-direction: column; align-items: flex-start; width: 100%;">
+                    <span style="color:var(--accent); font-weight:600; font-size:11px; text-transform:uppercase; letter-spacing:0.05em;">⚠ Approval Required</span>
+                    <div style="font-weight:500; color:var(--text-primary); font-family:'JetBrains Mono', monospace; font-size:13px; margin-top:6px; background:rgba(0,0,0,0.2); padding:8px; border-radius:4px; width:100%; box-sizing:border-box; white-space: pre-wrap; word-break: break-word; max-height: 300px; overflow-y: auto;">${escapeHtml(commandPreview)}</div>
                 </div>
                 <div class="approval-actions">
                     <button class="btn btn-reject" onclick="rejectAction()">Reject</button>
