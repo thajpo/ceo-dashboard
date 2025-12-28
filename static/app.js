@@ -554,50 +554,30 @@ function renderConversationMessages() {
     container.scrollTop = container.scrollHeight;
 }
 
-// Replaces the input box with Approval Bar if needed
 function renderInputArea() {
     const agent = state.agents[state.currentAgent];
     if (!agent) return;
 
     const inputContainer = document.querySelector('.conversation-input');
+    const needsInput = agent.status === 'needs_attention';
 
-    if (agent.pendingInteraction === 'approval') {
-        // Try to find the pending tool
-        const lastTool = agent.tools && agent.tools.length > 0 ? agent.tools[agent.tools.length - 1] : null;
-        let commandPreview = "Action pending approval";
-
-        if (lastTool) {
-            if (lastTool.name === 'Bash') commandPreview = `$> ${lastTool.input.command}`;
-            else if (lastTool.name === 'Edit') commandPreview = `Edit file: ${lastTool.input.path}`;
-            else if (lastTool.name === 'Write') commandPreview = `Write file: ${lastTool.input.path}`;
-            else commandPreview = `Use tool: ${lastTool.name}`;
-        }
-
-        inputContainer.innerHTML = `
-            <div class="approval-bar">
-                <div class="approval-message" style="flex-direction: column; align-items: flex-start; width: 100%;">
-                    <span style="color:var(--accent); font-weight:600; font-size:11px; text-transform:uppercase; letter-spacing:0.05em;">⚠ Approval Required</span>
-                    <div style="font-weight:500; color:var(--text-primary); font-family:'JetBrains Mono', monospace; font-size:13px; margin-top:6px; background:rgba(0,0,0,0.2); padding:8px; border-radius:4px; width:100%; box-sizing:border-box; white-space: pre-wrap; word-break: break-word; max-height: 300px; overflow-y: auto;">${escapeHtml(commandPreview)}</div>
-                </div>
-                <div class="approval-actions">
-                    <button class="btn btn-reject" onclick="rejectAction()">Reject</button>
-                    <button class="btn btn-approve" onclick="approveAction()">Yes</button>
-                    <button class="btn btn-approve" style="background:var(--accent);" onclick="approveAlwaysAction()">Yes Always</button>
-                </div>
+    inputContainer.innerHTML = `
+        <div style="max-width:800px; margin:0 auto;">
+            ${needsInput ? `
+            <div style="display:flex; gap:8px; margin-bottom:12px;">
+                <button class="btn btn-approve" onclick="sendConversationMessage('y')">Yes</button>
+                <button class="btn btn-approve" style="background:var(--accent);" onclick="sendConversationMessage('yes, and continue without asking')">Yes Always</button>
+                <button class="btn btn-reject" onclick="sendConversationMessage('n')">No</button>
             </div>
-        `;
-    } else {
-        // Standard input
-        inputContainer.innerHTML = `
+            ` : ''}
             <div class="input-wrapper">
-                <input type="text" id="conversation-input" placeholder="Give instructions..." onkeypress="handleConversationKeypress(event)">
+                <input type="text" id="conversation-input" placeholder="${needsInput ? 'Or type a response...' : 'Give instructions...'}" onkeypress="handleConversationKeypress(event)">
                 <button class="btn btn-primary" onclick="sendConversationMessage()">Send</button>
             </div>
-        `;
-        // Restore focus if needed
-        const input = document.getElementById('conversation-input');
-        if (input) input.focus();
-    }
+        </div>
+    `;
+    const input = document.getElementById('conversation-input');
+    if (input) input.focus();
 }
 
 // ============ ACTIONS ============
@@ -680,37 +660,9 @@ function sendConversationMessage(textOverride) {
     if (document.getElementById('conversation-input')) {
         document.getElementById('conversation-input').value = '';
     }
-
-    // Auto-return to inbox
-    setTimeout(() => {
-        showInbox();
-    }, 300);
-}
-
-function approveAction() {
-    // Send "y" to approve
-    sendConversationMessage("y");
-}
-
-function approveAlwaysAction() {
-    // Send "always" or similar to approve this and future interactions
-    // Assuming the underlying agent understands "always" or we just interpret it as "y" for now
-    // If the agent framework supports it, usually "always" or "all" works? 
-    // Let's send "always" as requested.
-    sendConversationMessage("always");
-}
-
-function rejectAction() {
-    // For rejection, we might want to ask for a reason. 
-    // For now, let's just send "n" or let user type.
-    // If they click reject, let's assume "n"
-    const reason = prompt("Enter rejection reason (optional), or cancel to just send 'n':");
-    if (reason === null) {
-        // Just send 'n'
-        sendConversationMessage("n");
-    } else {
-        sendConversationMessage(reason || "n");
-    }
+    
+    renderConversationMessages();
+    renderInputArea();
 }
 
 function handleConversationKeypress(event) {

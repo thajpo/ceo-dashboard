@@ -343,48 +343,25 @@ async def websocket_endpoint(websocket: WebSocket):
                 )
                 continue
 
-            # Handle existing process interaction (approvals/input)
-            if agent["status"] == "needs_attention":
-                if agent.get("process"):
-                    process = agent["process"]
-                    if process.stdin:
-                        # If content is "always", we might need special handling if CLI supports it.
-                        # For now, just pass it through. User sends "y", "n", or text.
-                        # Ensure newline
-                        msg = content + "\n"
-                        try:
-                            process.stdin.write(msg.encode())
-                            await process.stdin.drain()
+            process = agent.get("process")
 
-                            # Update status back to working
-                            agent["status"] = "working"
-                            await broadcast(
-                                {
-                                    "agent_id": agent_id,
-                                    "type": "status",
-                                    "status": "working",
-                                }
-                            )
-                        except Exception as e:
-                            print(f"Error writing to process: {e}")
-                            await websocket.send_json(
-                                {
-                                    "error": "failed to write to process",
-                                    "agent_id": agent_id,
-                                }
-                            )
-                else:
-                    await websocket.send_json(
-                        {"error": "process lost", "agent_id": agent_id}
-                    )
+            if process and process.returncode is None:
+                if process.stdin:
+                    try:
+                        process.stdin.write((content + "\n").encode())
+                        await process.stdin.drain()
+                        agent["status"] = "working"
+                        await broadcast(
+                            {
+                                "agent_id": agent_id,
+                                "type": "status",
+                                "status": "working",
+                            }
+                        )
+                    except Exception as e:
+                        print(f"stdin write failed: {e}")
                 continue
 
-            # Don't send if already processing
-            if agent["status"] == "working":
-                await websocket.send_json({"error": "agent busy", "agent_id": agent_id})
-                continue
-
-            # Run claude with the user's message
             asyncio.create_task(
                 run_claude(
                     agent_id,
